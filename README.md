@@ -216,6 +216,73 @@ widget = VectorSpace(
 )
 ```
 
+## Distance Metrics
+
+Compute distances and visualize similarity relationships between points.
+
+### Supported Metrics
+
+| Metric | Description |
+|--------|-------------|
+| `euclidean` | Straight-line distance (L2 norm) |
+| `cosine` | Angle-based distance (1 - cosine similarity) |
+| `manhattan` | Sum of absolute differences (L1 norm) |
+| `dot_product` | Negative dot product (higher = closer) |
+
+### Color by Distance
+
+```python
+# Color points by distance from a reference
+widget.color_by_distance("point_a")
+widget.color_by_distance("point_a", metric="cosine")
+```
+
+### Find Neighbors
+
+```python
+# Find k nearest neighbors
+neighbors = widget.find_neighbors("point_a", k=5)
+# Returns: [("point_b", 0.1), ("point_c", 0.2), ...]
+
+# Find neighbors within distance threshold
+neighbors = widget.find_neighbors("point_a", threshold=0.5)
+```
+
+### Show Connections
+
+```python
+# Draw lines to k-nearest neighbors
+widget.show_neighbors("point_a", k=5)
+
+# Draw lines to all points within threshold
+widget.show_neighbors("point_a", threshold=0.3)
+
+# Manual connection settings
+widget = VectorSpace(
+    points=data,
+    show_connections=True,
+    k_neighbors=3,
+    distance_metric="cosine",
+    connection_color="#00ff00",
+    connection_opacity=0.5,
+)
+```
+
+### Compute Distances
+
+```python
+# Get distances from reference to all points
+distances = widget.compute_distances("point_a")
+# Returns: {"point_b": 0.1, "point_c": 0.5, ...}
+
+# Use high-dimensional vectors (not just x,y,z)
+distances = widget.compute_distances(
+    "point_a",
+    metric="cosine",
+    vector_field="embedding"  # Use full embedding vector
+)
+```
+
 ## Export
 
 ```python

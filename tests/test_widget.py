@@ -175,3 +175,128 @@ class TestTraitlets:
         shape_map = {"type_a": "cube", "type_b": "cone"}
         widget = VectorSpace(shape_map=shape_map)
         assert widget.shape_map == shape_map
+
+
+class TestDistanceMetrics:
+    """Test distance computation methods."""
+
+    def test_default_distance_metric(self):
+        """Test default distance metric is euclidean."""
+        widget = VectorSpace()
+        assert widget.distance_metric == "euclidean"
+
+    def test_compute_distances_euclidean(self):
+        """Test euclidean distance computation."""
+        widget = VectorSpace(
+            points=[
+                {"id": "a", "x": 0, "y": 0, "z": 0},
+                {"id": "b", "x": 1, "y": 0, "z": 0},
+                {"id": "c", "x": 0, "y": 1, "z": 0},
+            ]
+        )
+        distances = widget.compute_distances("a", metric="euclidean")
+        assert abs(distances["b"] - 1.0) < 0.001
+        assert abs(distances["c"] - 1.0) < 0.001
+
+    def test_compute_distances_manhattan(self):
+        """Test manhattan distance computation."""
+        widget = VectorSpace(
+            points=[
+                {"id": "a", "x": 0, "y": 0, "z": 0},
+                {"id": "b", "x": 1, "y": 1, "z": 1},
+            ]
+        )
+        distances = widget.compute_distances("a", metric="manhattan")
+        assert abs(distances["b"] - 3.0) < 0.001
+
+    def test_compute_distances_cosine(self):
+        """Test cosine distance computation."""
+        widget = VectorSpace(
+            points=[
+                {"id": "a", "x": 1, "y": 0, "z": 0},
+                {"id": "b", "x": 1, "y": 0, "z": 0},  # Same direction
+                {"id": "c", "x": -1, "y": 0, "z": 0},  # Opposite direction
+            ]
+        )
+        distances = widget.compute_distances("a", metric="cosine")
+        assert abs(distances["b"] - 0.0) < 0.001  # Identical = 0 distance
+        assert abs(distances["c"] - 2.0) < 0.001  # Opposite = 2 distance
+
+    def test_find_neighbors_k(self):
+        """Test finding k nearest neighbors."""
+        widget = VectorSpace(
+            points=[
+                {"id": "a", "x": 0, "y": 0, "z": 0},
+                {"id": "b", "x": 1, "y": 0, "z": 0},
+                {"id": "c", "x": 2, "y": 0, "z": 0},
+                {"id": "d", "x": 3, "y": 0, "z": 0},
+            ]
+        )
+        neighbors = widget.find_neighbors("a", k=2)
+        assert len(neighbors) == 2
+        assert neighbors[0][0] == "b"  # Closest
+        assert neighbors[1][0] == "c"  # Second closest
+
+    def test_find_neighbors_threshold(self):
+        """Test finding neighbors within threshold."""
+        widget = VectorSpace(
+            points=[
+                {"id": "a", "x": 0, "y": 0, "z": 0},
+                {"id": "b", "x": 1, "y": 0, "z": 0},
+                {"id": "c", "x": 5, "y": 0, "z": 0},
+            ]
+        )
+        neighbors = widget.find_neighbors("a", threshold=2.0)
+        assert len(neighbors) == 1
+        assert neighbors[0][0] == "b"
+
+    def test_color_by_distance(self):
+        """Test coloring points by distance."""
+        widget = VectorSpace(
+            points=[
+                {"id": "a", "x": 0, "y": 0, "z": 0},
+                {"id": "b", "x": 1, "y": 0, "z": 0},
+            ]
+        )
+        widget.color_by_distance("a")
+        assert widget.color_field == "_distance"
+        assert widget.reference_point == "a"
+        assert widget.points[0]["_distance"] == 0.0
+        assert widget.points[1]["_distance"] == 1.0
+
+    def test_show_neighbors(self):
+        """Test showing neighbor connections."""
+        widget = VectorSpace(
+            points=[
+                {"id": "a", "x": 0, "y": 0, "z": 0},
+                {"id": "b", "x": 1, "y": 0, "z": 0},
+            ]
+        )
+        widget.show_neighbors("a", k=1)
+        assert widget.show_connections is True
+        assert widget.reference_point == "a"
+        assert widget.k_neighbors == 1
+
+
+class TestConnectionTraits:
+    """Test connection-related traits."""
+
+    def test_default_connections_off(self):
+        """Test connections are off by default."""
+        widget = VectorSpace()
+        assert widget.show_connections is False
+        assert widget.k_neighbors == 0
+        assert widget.distance_threshold is None
+
+    def test_connection_settings(self):
+        """Test connection trait settings."""
+        widget = VectorSpace(
+            show_connections=True,
+            k_neighbors=5,
+            connection_color="#ff0000",
+            connection_opacity=0.5,
+        )
+        assert widget.show_connections is True
+        assert widget.k_neighbors == 5
+        assert widget.connection_color == "#ff0000"
+        assert widget.connection_opacity == 0.5

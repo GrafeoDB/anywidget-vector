@@ -1,0 +1,348 @@
+/* === CSS Variables === */
+.avs-wrapper {
+  --avs-bg: #1a1a2e;
+  --avs-surface: #252542;
+  --avs-border: #3a3a5c;
+  --avs-text: #e0e0e0;
+  --avs-text-muted: #888;
+  --avs-primary: #6366f1;
+  --avs-primary-hover: #818cf8;
+  --avs-success: #10b981;
+  --avs-warning: #f59e0b;
+  --avs-error: #ef4444;
+  --avs-radius: 6px;
+
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: var(--avs-bg);
+  border-radius: 8px;
+  overflow: hidden;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+/* === Main Layout === */
+.avs-main {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  position: relative;
+}
+
+.avs-canvas-container {
+  flex: 1;
+  position: relative;
+  min-width: 0;
+}
+
+.avs-canvas-container canvas {
+  display: block;
+}
+
+/* === Toolbar === */
+.avs-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--avs-surface);
+  border-bottom: 1px solid var(--avs-border);
+  flex-shrink: 0;
+}
+
+.avs-backend-label {
+  padding: 6px 10px;
+  background: var(--avs-primary);
+  color: white;
+  border-radius: var(--avs-radius);
+  font-size: 12px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.avs-query-input {
+  flex: 1;
+  min-width: 200px;
+  padding: 8px 12px;
+  background: var(--avs-bg);
+  border: 1px solid var(--avs-border);
+  border-radius: var(--avs-radius);
+  color: var(--avs-text);
+  font-size: 13px;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+}
+
+.avs-query-input:focus {
+  outline: none;
+  border-color: var(--avs-primary);
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
+}
+
+.avs-query-input::placeholder {
+  color: var(--avs-text-muted);
+}
+
+/* === Buttons === */
+.avs-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+  background: var(--avs-surface);
+  border: 1px solid var(--avs-border);
+  border-radius: var(--avs-radius);
+  color: var(--avs-text);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.avs-btn:hover {
+  background: var(--avs-border);
+}
+
+.avs-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.avs-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+.avs-btn-primary {
+  background: var(--avs-primary);
+  border-color: var(--avs-primary);
+  color: white;
+}
+
+.avs-btn-primary:hover {
+  background: var(--avs-primary-hover);
+  border-color: var(--avs-primary-hover);
+}
+
+.avs-btn-icon {
+  padding: 4px;
+  background: transparent;
+  border: none;
+}
+
+.avs-loading svg {
+  animation: avs-spin 1s linear infinite;
+}
+
+@keyframes avs-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* === Select === */
+.avs-select {
+  padding: 8px 12px;
+  background: var(--avs-bg);
+  border: 1px solid var(--avs-border);
+  border-radius: var(--avs-radius);
+  color: var(--avs-text);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.avs-select:focus {
+  outline: none;
+  border-color: var(--avs-primary);
+}
+
+/* === Status Dot === */
+.avs-settings-btn {
+  position: relative;
+}
+
+.avs-status-dot {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--avs-text-muted);
+}
+
+.avs-status-connected {
+  background: var(--avs-success);
+}
+
+.avs-status-connecting {
+  background: var(--avs-warning);
+  animation: avs-pulse 1s ease-in-out infinite;
+}
+
+.avs-status-error {
+  background: var(--avs-error);
+}
+
+.avs-status-disconnected {
+  background: var(--avs-text-muted);
+}
+
+@keyframes avs-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+/* === Side Panels (shared) === */
+.avs-panel {
+  width: 0;
+  background: var(--avs-surface);
+  border-color: var(--avs-border);
+  overflow: hidden;
+  transition: width 0.2s ease;
+  flex-shrink: 0;
+}
+
+.avs-panel.avs-open {
+  width: 280px;
+}
+
+.avs-panel-left {
+  border-right: 1px solid var(--avs-border);
+}
+
+.avs-panel-right {
+  border-left: 1px solid var(--avs-border);
+}
+
+.avs-panel-inner {
+  width: 280px;
+  height: 100%;
+  overflow-y: auto;
+}
+
+.avs-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--avs-border);
+  font-weight: 600;
+  color: var(--avs-text);
+}
+
+.avs-section-header {
+  padding: 12px 16px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--avs-text-muted);
+  border-top: 1px solid var(--avs-border);
+  margin-top: 8px;
+}
+
+/* === Form Elements === */
+.avs-form-group {
+  padding: 8px 16px;
+}
+
+.avs-label {
+  display: block;
+  font-size: 12px;
+  color: var(--avs-text-muted);
+  margin-bottom: 4px;
+}
+
+.avs-input {
+  width: 100%;
+  padding: 8px 10px;
+  background: var(--avs-bg);
+  border: 1px solid var(--avs-border);
+  border-radius: var(--avs-radius);
+  color: var(--avs-text);
+  font-size: 13px;
+  box-sizing: border-box;
+}
+
+.avs-input:focus {
+  outline: none;
+  border-color: var(--avs-primary);
+}
+
+.avs-note {
+  padding: 12px 16px;
+  font-size: 12px;
+  color: var(--avs-text-muted);
+  font-style: italic;
+}
+
+.avs-error {
+  margin: 8px 16px;
+  padding: 8px 12px;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid var(--avs-error);
+  border-radius: var(--avs-radius);
+  color: var(--avs-error);
+  font-size: 12px;
+}
+
+.avs-connection-fields {
+  border-top: 1px solid var(--avs-border);
+  margin-top: 8px;
+  padding-top: 8px;
+}
+
+/* === Properties Panel === */
+.avs-properties-empty {
+  padding: 24px 16px;
+  text-align: center;
+  color: var(--avs-text-muted);
+  font-size: 13px;
+}
+
+.avs-property-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 6px 16px;
+  font-size: 13px;
+}
+
+.avs-property-key {
+  color: var(--avs-text-muted);
+}
+
+.avs-property-value {
+  color: var(--avs-text);
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* === Tooltip === */
+.avs-tooltip {
+  position: absolute;
+  display: none;
+  background: rgba(0, 0, 0, 0.85);
+  color: white;
+  padding: 8px 12px;
+  border-radius: 4px;
+  font-size: 12px;
+  pointer-events: none;
+  z-index: 1000;
+  max-width: 250px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.avs-tooltip-label {
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.avs-tooltip-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.avs-tooltip-key {
+  color: #999;
+}

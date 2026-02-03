@@ -1,7 +1,7 @@
 [project]
 name = "anywidget-vector"
-version = "0.1.0"
-description = "Interactive vector visualization for Python notebooks using anywidget"
+version = "0.4.0"
+description = "Interactive 3D vector visualization with query UI for vector databases"
 readme = "README.md"
 license = { text = "Apache-2.0" }
 requires-python = ">=3.12"
@@ -28,7 +28,7 @@ dependencies = [
 dev = [
     "prek>=0.3.1",
     "pytest>=9.0.2",
-    "ruff>=0.14.14",
+    "ruff>=0.15.0",
     "ty>=0.0.14",
     "marimo>=0.19.7",
 ]
