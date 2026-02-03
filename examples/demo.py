@@ -14,13 +14,16 @@ app = marimo.App(width="medium")
 @app.cell
 def _():
     import marimo as mo
+
     return (mo,)
 
 
 @app.cell
 def _():
     import random
+
     from anywidget_vector import VectorSpace
+
     return VectorSpace, random
 
 
@@ -42,12 +45,14 @@ def _(VectorSpace, random):
     def generate_cluster(center, n=20, spread=0.15):
         points = []
         for i in range(n):
-            points.append({
-                "x": center[0] + random.gauss(0, spread),
-                "y": center[1] + random.gauss(0, spread),
-                "z": center[2] + random.gauss(0, spread),
-                "cluster": center[3],
-            })
+            points.append(
+                {
+                    "x": center[0] + random.gauss(0, spread),
+                    "y": center[1] + random.gauss(0, spread),
+                    "z": center[2] + random.gauss(0, spread),
+                    "cluster": center[3],
+                }
+            )
         return points
 
     # Create 4 clusters

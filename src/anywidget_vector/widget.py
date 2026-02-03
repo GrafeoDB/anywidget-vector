@@ -9,14 +9,14 @@ from typing import TYPE_CHECKING, Any
 import anywidget
 import traitlets
 
-from anywidget_vector.backends import BACKENDS, is_python_backend, get_query_placeholder
+from anywidget_vector.backends import is_python_backend
 from anywidget_vector.backends.chroma.client import execute_query as chroma_query
-from anywidget_vector.backends.lancedb.client import execute_query as lancedb_query
 from anywidget_vector.backends.grafeo.client import execute_query as grafeo_query
+from anywidget_vector.backends.lancedb.client import execute_query as lancedb_query
 from anywidget_vector.ui import get_css, get_esm
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    pass
 
 
 class VectorSpace(anywidget.AnyWidget):
@@ -171,7 +171,12 @@ class VectorSpace(anywidget.AnyWidget):
         """Create from arrays of positions."""
         pos_list = _to_list(positions)
         points = [
-            {"id": ids[i] if ids else f"point_{i}", "x": float(p[0]), "y": float(p[1]), "z": float(p[2]) if len(p) > 2 else 0.0}
+            {
+                "id": ids[i] if ids else f"point_{i}",
+                "x": float(p[0]),
+                "y": float(p[1]),
+                "z": float(p[2]) if len(p) > 2 else 0.0,
+            }
             for i, p in enumerate(pos_list)
         ]
         return cls(points=points, **kwargs)
@@ -195,7 +200,9 @@ class VectorSpace(anywidget.AnyWidget):
             return {}
         return {p.get("id"): self._distance(ref, p, metric) for p in self.points if p.get("id") != reference_id}
 
-    def find_neighbors(self, reference_id: str, k: int | None = None, threshold: float | None = None) -> list[tuple[str, float]]:
+    def find_neighbors(
+        self, reference_id: str, k: int | None = None, threshold: float | None = None
+    ) -> list[tuple[str, float]]:
         """Find nearest neighbors of a reference point."""
         distances = sorted(self.compute_distances(reference_id).items(), key=lambda x: x[1])
         if threshold is not None:
@@ -223,14 +230,14 @@ class VectorSpace(anywidget.AnyWidget):
         x1, y1, z1 = p1.get("x", 0), p1.get("y", 0), p1.get("z", 0)
         x2, y2, z2 = p2.get("x", 0), p2.get("y", 0), p2.get("z", 0)
         if metric == "euclidean":
-            return math.sqrt((x1-x2)**2 + (y1-y2)**2 + (z1-z2)**2)
+            return math.sqrt((x1 - x2) ** 2 + (y1 - y2) ** 2 + (z1 - z2) ** 2)
         elif metric == "cosine":
-            dot = x1*x2 + y1*y2 + z1*z2
-            m1, m2 = math.sqrt(x1*x1 + y1*y1 + z1*z1), math.sqrt(x2*x2 + y2*y2 + z2*z2)
+            dot = x1 * x2 + y1 * y2 + z1 * z2
+            m1, m2 = math.sqrt(x1 * x1 + y1 * y1 + z1 * z1), math.sqrt(x2 * x2 + y2 * y2 + z2 * z2)
             return 1 - (dot / (m1 * m2)) if m1 and m2 else 1
         elif metric == "manhattan":
-            return abs(x1-x2) + abs(y1-y2) + abs(z1-z2)
-        return math.sqrt((x1-x2)**2 + (y1-y2)**2 + (z1-z2)**2)
+            return abs(x1 - x2) + abs(y1 - y2) + abs(z1 - z2)
+        return math.sqrt((x1 - x2) ** 2 + (y1 - y2) ** 2 + (z1 - z2) ** 2)
 
     # === Camera ===
 
@@ -257,6 +264,7 @@ class VectorSpace(anywidget.AnyWidget):
 
 
 # === Helper Functions ===
+
 
 def _normalize_points(data: list[Any]) -> list[dict[str, Any]]:
     """Normalize various point formats to standard dict format."""

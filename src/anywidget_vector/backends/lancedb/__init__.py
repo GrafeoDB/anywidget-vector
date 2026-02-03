@@ -16,7 +16,7 @@ Query Format:
 SQL WHERE supports: =, !=, <, >, <=, >=, AND, OR, IN, LIKE, IS NULL, IS NOT NULL
 """
 
-from anywidget_vector.backends.lancedb.converter import to_points
 from anywidget_vector.backends.lancedb.client import execute_query
+from anywidget_vector.backends.lancedb.converter import to_points
 
 __all__ = ["to_points", "execute_query"]

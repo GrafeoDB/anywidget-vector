@@ -28,6 +28,6 @@ Query Format (GraphQL):
     { Get { Article(nearText: {concepts: ["AI"]}, limit: 10) { ... } } }
 """
 
-from anywidget_vector.backends.weaviate.converter import to_points, build_where
+from anywidget_vector.backends.weaviate.converter import build_where, to_points
 
 __all__ = ["to_points", "build_where"]

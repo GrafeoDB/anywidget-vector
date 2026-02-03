@@ -21,6 +21,6 @@ Query Format (JSON):
     {"filter": {"must": [...]}, "limit": 100}
 """
 
-from anywidget_vector.backends.qdrant.converter import to_points, build_filter
+from anywidget_vector.backends.qdrant.converter import build_filter, to_points
 
 __all__ = ["to_points", "build_filter"]

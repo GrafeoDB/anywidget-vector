@@ -14,7 +14,7 @@ Query Format (Grafeo Query Language):
     MATCH (n:Vector)-[r]->(m) RETURN n, r, m LIMIT 10
 """
 
-from anywidget_vector.backends.grafeo.converter import to_points
 from anywidget_vector.backends.grafeo.client import execute_query
+from anywidget_vector.backends.grafeo.converter import to_points
 
 __all__ = ["to_points", "execute_query"]

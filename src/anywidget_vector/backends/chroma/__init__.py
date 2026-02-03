@@ -21,7 +21,7 @@ Where operators: $eq, $ne, $gt, $gte, $lt, $lte, $in, $nin
 Combined: $and, $or
 """
 
-from anywidget_vector.backends.chroma.converter import to_points, build_where
 from anywidget_vector.backends.chroma.client import execute_query
+from anywidget_vector.backends.chroma.converter import build_where, to_points
 
 __all__ = ["to_points", "build_where", "execute_query"]

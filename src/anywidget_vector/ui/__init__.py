@@ -49,13 +49,13 @@ import {{ OrbitControls }} from "https://esm.sh/three@0.160.0/addons/controls/Or
 
 // === Backend Clients ===
 // Qdrant
-{_strip_imports_exports(qdrant_client).replace("function executeQuery", "async function qdrantExecute").replace("function toPoints", "function qdrantToPoints")}
+{_rename_functions(qdrant_client, "qdrant")}
 
 // Pinecone
-{_strip_imports_exports(pinecone_client).replace("function executeQuery", "async function pineconeExecute").replace("function toPoints", "function pineconeToPoints")}
+{_rename_functions(pinecone_client, "pinecone")}
 
 // Weaviate
-{_strip_imports_exports(weaviate_client).replace("function executeQuery", "async function weaviateExecute").replace("function toPoints", "function weaviateToPoints")}
+{_rename_functions(weaviate_client, "weaviate")}
 
 // Unified query executor
 async function executeBackendQuery(model) {{
@@ -196,3 +196,11 @@ def _strip_imports_exports(code: str) -> str:
             continue
         lines.append(line)
     return "\n".join(lines)
+
+
+def _rename_functions(code: str, prefix: str) -> str:
+    """Strip imports/exports and rename functions with prefix."""
+    code = _strip_imports_exports(code)
+    code = code.replace("function executeQuery", f"async function {prefix}Execute")
+    code = code.replace("function toPoints", f"function {prefix}ToPoints")
+    return code
