@@ -167,18 +167,27 @@ class VectorSpace(anywidget.AnyWidget):
         return cls(points=_normalize_points(points), **kwargs)
 
     @classmethod
-    def from_arrays(cls, positions: Any, *, ids: list[str] | None = None, **kwargs: Any) -> VectorSpace:
+    def from_arrays(
+        cls,
+        positions: Any,
+        *,
+        ids: list[str] | None = None,
+        labels: list[str] | None = None,
+        **kwargs: Any,
+    ) -> VectorSpace:
         """Create from arrays of positions."""
         pos_list = _to_list(positions)
-        points = [
-            {
+        points = []
+        for i, p in enumerate(pos_list):
+            point = {
                 "id": ids[i] if ids else f"point_{i}",
                 "x": float(p[0]),
                 "y": float(p[1]),
                 "z": float(p[2]) if len(p) > 2 else 0.0,
             }
-            for i, p in enumerate(pos_list)
-        ]
+            if labels:
+                point["label"] = labels[i]
+            points.append(point)
         return cls(points=points, **kwargs)
 
     @classmethod
@@ -238,6 +247,18 @@ class VectorSpace(anywidget.AnyWidget):
         elif metric == "manhattan":
             return abs(x1 - x2) + abs(y1 - y2) + abs(z1 - z2)
         return math.sqrt((x1 - x2) ** 2 + (y1 - y2) ** 2 + (z1 - z2) ** 2)
+
+    # === Camera ===
+
+    # === Selection ===
+
+    def select(self, point_ids: list[str]) -> None:
+        """Programmatically select points by ID."""
+        self.selected_points = point_ids
+
+    def clear_selection(self) -> None:
+        """Clear all selected points."""
+        self.selected_points = []
 
     # === Camera ===
 
