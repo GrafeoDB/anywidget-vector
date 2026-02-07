@@ -428,9 +428,7 @@ class TestEventDecorators:
 
     def test_on_hover_fires(self):
         """Test on_hover fires when hovered_point changes."""
-        widget = VectorSpace(
-            points=[{"id": "a", "x": 0, "y": 0, "z": 0}]
-        )
+        widget = VectorSpace(points=[{"id": "a", "x": 0, "y": 0, "z": 0}])
         hovers = []
 
         @widget.on_hover
