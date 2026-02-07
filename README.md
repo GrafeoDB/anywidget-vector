@@ -6,12 +6,12 @@ Works with Marimo, Jupyter, VS Code, Colab, anywhere [anywidget](https://anywidg
 
 ## Features
 
-- **Universal** — One widget, every notebook environment
-- **6D Visualization** — X, Y, Z position + Color, Shape, Size encoding
-- **Backend-agnostic** — NumPy, pandas, Qdrant, Chroma, or raw dicts
-- **Interactive** — Orbit, pan, zoom, click, hover, select
-- **Customizable** — Color scales, shapes, sizes, themes
-- **Performant** — Instanced rendering for large point clouds
+- **Universal**: One widget, every notebook environment
+- **6D Visualization**: X, Y, Z position + Color, Shape, Size encoding
+- **Backend-agnostic**: NumPy, pandas, Qdrant, Chroma, or raw dicts
+- **Interactive**: Orbit, pan, zoom, click, hover, select
+- **Customizable**: Color scales, shapes, sizes, themes
+- **Performant**: Instanced rendering for large point clouds
 
 ## Installation
 
@@ -302,9 +302,9 @@ widget.to_json()                # Export points as JSON string
 
 ## Related
 
-- [anywidget](https://anywidget.dev/) — Custom Jupyter widgets made easy
-- [anywidget-graph](https://github.com/GrafeoDB/anywidget-graph) — Graph visualization widget
-- [Three.js](https://threejs.org/) — 3D JavaScript library
+- [anywidget](https://anywidget.dev/), custom Jupyter widgets made easy
+- [anywidget-graph](https://github.com/GrafeoDB/anywidget-graph), graph visualization widget
+- [Three.js](https://threejs.org/), 3D JavaScript library
 
 ## License
 

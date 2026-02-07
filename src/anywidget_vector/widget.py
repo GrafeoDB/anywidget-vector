@@ -153,6 +153,54 @@ class VectorSpace(anywidget.AnyWidget):
 
         raise ValueError(f"Unknown Python backend: {self.backend}")
 
+    # === Event Decorators ===
+
+    def on_click(self, callback: Any) -> Any:
+        """Register a click handler.
+
+        The callback receives (point_id, point_data) when a point is clicked.
+        """
+
+        def _handler(change: dict[str, Any]) -> None:
+            points = change["new"]
+            if points and len(points) == 1:
+                pid = points[0]
+                pdata = next((p for p in self.points if p.get("id") == pid), {})
+                callback(pid, pdata)
+
+        self.observe(_handler, names=["selected_points"])
+        return callback
+
+    def on_hover(self, callback: Any) -> Any:
+        """Register a hover handler.
+
+        The callback receives (point_id, point_data) on hover, or (None, None) on leave.
+        """
+
+        def _handler(change: dict[str, Any]) -> None:
+            point = change["new"]
+            if point:
+                callback(point.get("id"), point)
+            else:
+                callback(None, None)
+
+        self.observe(_handler, names=["hovered_point"])
+        return callback
+
+    def on_selection(self, callback: Any) -> Any:
+        """Register a selection handler.
+
+        The callback receives (point_ids, points_data) when selection changes.
+        """
+
+        def _handler(change: dict[str, Any]) -> None:
+            pids = change["new"]
+            pdata = [p for p in self.points if p.get("id") in set(pids)]
+            callback(pids, pdata)
+
+        self.observe(_handler, names=["selected_points"])
+        return callback
+
     # === Factory Methods ===
 
     @classmethod
@@ -191,23 +239,141 @@ class VectorSpace(anywidget.AnyWidget):
         return cls(points=points, **kwargs)
 
     @classmethod
-    def from_dataframe(cls, df: Any, *, x: str = "x", y: str = "y", z: str = "z", **kwargs: Any) -> VectorSpace:
-        """Create from pandas DataFrame."""
+    def from_numpy(
+        cls,
+        positions: Any,
+        *,
+        ids: list[str] | None = None,
+        labels: list[str] | None = None,
+        **kwargs: Any,
+    ) -> VectorSpace:
+        """Create from NumPy array of shape (N, 2) or (N, 3)."""
+        return cls.from_arrays(positions, ids=ids, labels=labels, **kwargs)
+
+    @classmethod
+    def from_umap(
+        cls,
+        embedding: Any,
+        *,
+        ids: list[str] | None = None,
+        labels: list[str] | None = None,
+        **kwargs: Any,
+    ) -> VectorSpace:
+        """Create from UMAP, t-SNE, or PCA embedding array of shape (N, 2) or (N, 3)."""
+        return cls.from_arrays(embedding, ids=ids, labels=labels, **kwargs)
+
+    @classmethod
+    def from_dataframe(
+        cls,
+        df: Any,
+        *,
+        x: str = "x",
+        y: str = "y",
+        z: str = "z",
+        color_col: str | None = None,
+        size_col: str | None = None,
+        **kwargs: Any,
+    ) -> VectorSpace:
+        """Create from pandas DataFrame.
+
+        Args:
+            df: pandas DataFrame with coordinate columns.
+            x: Column name for x coordinate.
+            y: Column name for y coordinate.
+            z: Column name for z coordinate.
+            color_col: Column to use for color mapping.
+            size_col: Column to use for size mapping.
+            **kwargs: Additional widget options.
+        """
+        if color_col:
+            kwargs.setdefault("color_field", color_col)
+        if size_col:
+            kwargs.setdefault("size_field", size_col)
         points = [
             {"id": f"point_{i}", "x": float(row[x]), "y": float(row[y]), "z": float(row.get(z, 0)), **row}
             for i, row in enumerate(df.to_dict("records"))
         ]
         return cls(points=points, **kwargs)
 
+    @classmethod
+    def from_qdrant(
+        cls,
+        client: Any,
+        collection: str,
+        *,
+        limit: int = 5000,
+        **kwargs: Any,
+    ) -> VectorSpace:
+        """Create from a Qdrant collection.
+
+        Args:
+            client: qdrant_client.QdrantClient instance.
+            collection: Collection name.
+            limit: Maximum number of points to fetch.
+            **kwargs: Additional widget options.
+        """
+        records, _ = client.scroll(collection, limit=limit, with_vectors=True)
+        points = []
+        for r in records:
+            point: dict[str, Any] = {"id": str(r.id)}
+            vec = r.vector
+            if vec:
+                point["x"] = float(vec[0]) if len(vec) > 0 else 0.0
+                point["y"] = float(vec[1]) if len(vec) > 1 else 0.0
+                point["z"] = float(vec[2]) if len(vec) > 2 else 0.0
+                point["vector"] = list(vec)
+            if r.payload:
+                point.update(r.payload)
+            points.append(point)
+        return cls(points=points, **kwargs)
+
+    @classmethod
+    def from_chroma(
+        cls,
+        collection: Any,
+        *,
+        limit: int = 5000,
+        **kwargs: Any,
+    ) -> VectorSpace:
+        """Create from a ChromaDB collection.
+
+        Args:
+            collection: chromadb Collection object.
+            limit: Maximum number of points to fetch.
+            **kwargs: Additional widget options.
+        """
+        from anywidget_vector.backends.chroma.converter import to_points
+
+        response = collection.get(
+            limit=limit,
+            include=["embeddings", "metadatas", "documents"],
+        )
+        return cls(points=to_points(response), **kwargs)
+
     # === Distance Methods ===
 
-    def compute_distances(self, reference_id: str, metric: str | None = None) -> dict[str, float]:
-        """Compute distances from reference point to all others."""
+    def compute_distances(
+        self,
+        reference_id: str,
+        metric: str | None = None,
+        vector_field: str | None = None,
+    ) -> dict[str, float]:
+        """Compute distances from reference point to all others.
+
+        Args:
+            reference_id: ID of the reference point.
+            metric: Distance metric (euclidean, cosine, manhattan, dot_product).
+            vector_field: Use a high-dimensional vector field instead of x/y/z.
+        """
         metric = metric or self.distance_metric
         ref = next((p for p in self.points if p.get("id") == reference_id), None)
         if not ref:
             return {}
-        return {p.get("id"): self._distance(ref, p, metric) for p in self.points if p.get("id") != reference_id}
+        return {
+            p.get("id"): self._distance(ref, p, metric, vector_field)
+            for p in self.points
+            if p.get("id") != reference_id
+        }
 
     def find_neighbors(
         self, reference_id: str, k: int | None = None, threshold: float | None = None
@@ -218,9 +384,9 @@ class VectorSpace(anywidget.AnyWidget):
             return [(pid, d) for pid, d in distances if d <= threshold]
         return distances[:k] if k else distances
 
-    def color_by_distance(self, reference_id: str) -> None:
+    def color_by_distance(self, reference_id: str, metric: str | None = None) -> None:
         """Color points by distance from reference."""
-        distances = self.compute_distances(reference_id)
+        distances = self.compute_distances(reference_id, metric=metric)
         self.points = [{**p, "_distance": distances.get(p.get("id"), 0)} for p in self.points]
         self.color_field = "_distance"
         self.reference_point = reference_id
@@ -234,19 +400,31 @@ class VectorSpace(anywidget.AnyWidget):
         if threshold:
             self.distance_threshold = threshold
 
-    def _distance(self, p1: dict, p2: dict, metric: str) -> float:
+    def _distance(self, p1: dict, p2: dict, metric: str, vector_field: str | None = None) -> float:
         """Compute distance between two points."""
-        x1, y1, z1 = p1.get("x", 0), p1.get("y", 0), p1.get("z", 0)
-        x2, y2, z2 = p2.get("x", 0), p2.get("y", 0), p2.get("z", 0)
+        if vector_field:
+            v1 = p1.get(vector_field, [])
+            v2 = p2.get(vector_field, [])
+            n = min(len(v1), len(v2))
+            if n == 0:
+                return float("inf")
+        else:
+            v1 = [p1.get("x", 0), p1.get("y", 0), p1.get("z", 0)]
+            v2 = [p2.get("x", 0), p2.get("y", 0), p2.get("z", 0)]
+            n = 3
+
         if metric == "euclidean":
-            return math.sqrt((x1 - x2) ** 2 + (y1 - y2) ** 2 + (z1 - z2) ** 2)
+            return math.sqrt(sum((v1[i] - v2[i]) ** 2 for i in range(n)))
         elif metric == "cosine":
-            dot = x1 * x2 + y1 * y2 + z1 * z2
-            m1, m2 = math.sqrt(x1 * x1 + y1 * y1 + z1 * z1), math.sqrt(x2 * x2 + y2 * y2 + z2 * z2)
-            return 1 - (dot / (m1 * m2)) if m1 and m2 else 1
+            dot = sum(v1[i] * v2[i] for i in range(n))
+            m1 = math.sqrt(sum(v1[i] ** 2 for i in range(n)))
+            m2 = math.sqrt(sum(v2[i] ** 2 for i in range(n)))
+            return 1 - (dot / (m1 * m2)) if m1 and m2 else 1.0
         elif metric == "manhattan":
-            return abs(x1 - x2) + abs(y1 - y2) + abs(z1 - z2)
-        return math.sqrt((x1 - x2) ** 2 + (y1 - y2) ** 2 + (z1 - z2) ** 2)
+            return sum(abs(v1[i] - v2[i]) for i in range(n))
+        elif metric == "dot_product":
+            return -sum(v1[i] * v2[i] for i in range(n))
+        return math.sqrt(sum((v1[i] - v2[i]) ** 2 for i in range(n)))
 
     # === Camera ===
 

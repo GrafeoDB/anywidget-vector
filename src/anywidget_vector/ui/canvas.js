@@ -4,7 +4,7 @@ import { OrbitControls } from "https://esm.sh/three@0.160.0/addons/controls/Orbi
 import { COLOR_SCALES, CATEGORICAL_COLORS } from "./constants.js";
 
 // Shape geometries factory
-const SHAPES = {
+const SHAPE_GEOMETRIES = {
   sphere: () => new THREE.SphereGeometry(1, 16, 16),
   cube: () => new THREE.BoxGeometry(1, 1, 1),
   cone: () => new THREE.ConeGeometry(0.7, 1.4, 16),
@@ -186,11 +186,11 @@ export function createCanvas(model, container, callbacks) {
   }
 
   function getPointShape(point, opts) {
-    if (point.shape && SHAPES[point.shape]) return point.shape;
+    if (point.shape && SHAPE_GEOMETRIES[point.shape]) return point.shape;
     if (opts.shapeField && point[opts.shapeField] !== undefined) {
       const value = String(point[opts.shapeField]);
-      if (opts.shapeMap[value] && SHAPES[opts.shapeMap[value]]) return opts.shapeMap[value];
-      const shapes = Object.keys(SHAPES);
+      if (opts.shapeMap[value] && SHAPE_GEOMETRIES[opts.shapeMap[value]]) return opts.shapeMap[value];
+      const shapes = Object.keys(SHAPE_GEOMETRIES);
       return shapes[hashString(value) % shapes.length];
     }
     return "sphere";
@@ -199,7 +199,7 @@ export function createCanvas(model, container, callbacks) {
   function createIndividualPoints(points, opts) {
     points.forEach((point, idx) => {
       const shape = getPointShape(point, opts);
-      const geometry = SHAPES[shape]();
+      const geometry = SHAPE_GEOMETRIES[shape]();
       const color = getPointColor(point, opts);
       const material = new THREE.MeshPhongMaterial({ color });
       const mesh = new THREE.Mesh(geometry, material);
@@ -220,7 +220,7 @@ export function createCanvas(model, container, callbacks) {
     });
 
     for (const [shape, items] of Object.entries(groups)) {
-      const geometry = SHAPES[shape]();
+      const geometry = SHAPE_GEOMETRIES[shape]();
       const material = new THREE.MeshPhongMaterial({ vertexColors: false });
       const instancedMesh = new THREE.InstancedMesh(geometry, material, items.length);
       const matrix = new THREE.Matrix4();

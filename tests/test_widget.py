@@ -278,6 +278,202 @@ class TestDistanceMetrics:
         assert widget.k_neighbors == 1
 
 
+class TestFromNumpy:
+    """Test from_numpy factory method."""
+
+    def test_from_numpy_basic(self):
+        """Test from_numpy with list-of-lists (numpy-like)."""
+        positions = [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]]
+        widget = VectorSpace.from_numpy(positions)
+        assert len(widget.points) == 2
+        assert widget.points[0]["x"] == 0.1
+        assert widget.points[1]["z"] == 0.6
+
+    def test_from_numpy_with_labels(self):
+        """Test from_numpy with labels."""
+        positions = [[0, 0, 0], [1, 1, 1]]
+        widget = VectorSpace.from_numpy(positions, labels=["A", "B"])
+        assert widget.points[0]["label"] == "A"
+        assert widget.points[1]["label"] == "B"
+
+    def test_from_numpy_2d(self):
+        """Test from_numpy with 2D positions."""
+        positions = [[0, 1], [2, 3]]
+        widget = VectorSpace.from_numpy(positions)
+        assert widget.points[0]["z"] == 0.0
+
+
+class TestFromUmap:
+    """Test from_umap factory method."""
+
+    def test_from_umap_basic(self):
+        """Test from_umap with embedding array."""
+        embedding = [[0.5, 0.3, 0.8], [-0.2, 0.7, 0.1]]
+        widget = VectorSpace.from_umap(embedding)
+        assert len(widget.points) == 2
+        assert widget.points[0]["x"] == 0.5
+
+    def test_from_umap_with_labels(self):
+        """Test from_umap with labels."""
+        embedding = [[0, 0, 0], [1, 1, 1]]
+        widget = VectorSpace.from_umap(embedding, labels=["cluster_0", "cluster_1"])
+        assert widget.points[0]["label"] == "cluster_0"
+
+
+class TestFromDataframeExtended:
+    """Test from_dataframe with color_col and size_col."""
+
+    def test_color_col(self):
+        """Test color_col sets color_field."""
+
+        class FakeDF:
+            def to_dict(self, orient):
+                return [
+                    {"x": 0, "y": 0, "z": 0, "cluster": "A"},
+                    {"x": 1, "y": 1, "z": 1, "cluster": "B"},
+                ]
+
+        widget = VectorSpace.from_dataframe(FakeDF(), color_col="cluster")
+        assert widget.color_field == "cluster"
+
+    def test_size_col(self):
+        """Test size_col sets size_field."""
+
+        class FakeDF:
+            def to_dict(self, orient):
+                return [
+                    {"x": 0, "y": 0, "z": 0, "weight": 0.5},
+                    {"x": 1, "y": 1, "z": 1, "weight": 1.0},
+                ]
+
+        widget = VectorSpace.from_dataframe(FakeDF(), size_col="weight")
+        assert widget.size_field == "weight"
+
+
+class TestDotProductMetric:
+    """Test dot_product distance metric."""
+
+    def test_dot_product_distance(self):
+        """Test dot product metric (negative dot product)."""
+        widget = VectorSpace(
+            points=[
+                {"id": "a", "x": 1, "y": 0, "z": 0},
+                {"id": "b", "x": 2, "y": 0, "z": 0},
+                {"id": "c", "x": -1, "y": 0, "z": 0},
+            ]
+        )
+        distances = widget.compute_distances("a", metric="dot_product")
+        assert distances["b"] == -2.0  # -(1*2 + 0 + 0)
+        assert distances["c"] == 1.0  # -(1*-1 + 0 + 0)
+
+
+class TestVectorFieldDistance:
+    """Test compute_distances with vector_field parameter."""
+
+    def test_vector_field_euclidean(self):
+        """Test distance using high-dimensional vector field."""
+        widget = VectorSpace(
+            points=[
+                {"id": "a", "x": 0, "y": 0, "z": 0, "embedding": [1.0, 0.0, 0.0, 0.0]},
+                {"id": "b", "x": 1, "y": 1, "z": 1, "embedding": [0.0, 1.0, 0.0, 0.0]},
+            ]
+        )
+        distances = widget.compute_distances("a", metric="euclidean", vector_field="embedding")
+        # sqrt((1-0)^2 + (0-1)^2 + 0 + 0) = sqrt(2)
+        assert abs(distances["b"] - 1.4142) < 0.01
+
+    def test_vector_field_cosine(self):
+        """Test cosine distance using vector field."""
+        widget = VectorSpace(
+            points=[
+                {"id": "a", "x": 0, "y": 0, "z": 0, "embedding": [1.0, 0.0]},
+                {"id": "b", "x": 0, "y": 0, "z": 0, "embedding": [0.0, 1.0]},
+            ]
+        )
+        distances = widget.compute_distances("a", metric="cosine", vector_field="embedding")
+        assert abs(distances["b"] - 1.0) < 0.001  # Orthogonal = 1.0
+
+
+class TestEventDecorators:
+    """Test on_click, on_hover, on_selection decorators."""
+
+    def test_on_click_returns_callback(self):
+        """Test on_click returns the callback for decorator use."""
+        widget = VectorSpace(points=[{"id": "a", "x": 0, "y": 0, "z": 0}])
+
+        def my_handler(point_id, point_data):
+            pass
+
+        result = widget.on_click(my_handler)
+        assert result is my_handler
+
+    def test_on_click_fires(self):
+        """Test on_click fires when selected_points changes to single point."""
+        widget = VectorSpace(
+            points=[
+                {"id": "a", "x": 0, "y": 0, "z": 0},
+                {"id": "b", "x": 1, "y": 1, "z": 1},
+            ]
+        )
+        clicks = []
+
+        @widget.on_click
+        def handle(point_id, point_data):
+            clicks.append((point_id, point_data))
+
+        widget.selected_points = ["a"]
+        assert len(clicks) == 1
+        assert clicks[0][0] == "a"
+        assert clicks[0][1]["x"] == 0
+
+    def test_on_hover_fires(self):
+        """Test on_hover fires when hovered_point changes."""
+        widget = VectorSpace(
+            points=[{"id": "a", "x": 0, "y": 0, "z": 0}]
+        )
+        hovers = []
+
+        @widget.on_hover
+        def handle(point_id, point_data):
+            hovers.append(point_id)
+
+        widget.hovered_point = {"id": "a", "x": 0, "y": 0, "z": 0}
+        assert len(hovers) == 1
+        assert hovers[0] == "a"
+
+    def test_on_hover_leave(self):
+        """Test on_hover fires with None on leave."""
+        widget = VectorSpace()
+        hovers = []
+
+        @widget.on_hover
+        def handle(point_id, point_data):
+            hovers.append(point_id)
+
+        widget.hovered_point = {"id": "x"}
+        widget.hovered_point = None
+        assert hovers[-1] is None
+
+    def test_on_selection_fires(self):
+        """Test on_selection fires with multiple points."""
+        widget = VectorSpace(
+            points=[
+                {"id": "a", "x": 0, "y": 0, "z": 0},
+                {"id": "b", "x": 1, "y": 1, "z": 1},
+            ]
+        )
+        selections = []
+
+        @widget.on_selection
+        def handle(point_ids, points_data):
+            selections.append((point_ids, points_data))
+
+        widget.selected_points = ["a", "b"]
+        assert len(selections) == 1
+        assert selections[0][0] == ["a", "b"]
+        assert len(selections[0][1]) == 2
+
+
 class TestConnectionTraits:
     """Test connection-related traits."""
 

@@ -1,6 +1,6 @@
 [project]
 name = "anywidget-vector"
-version = "0.2.1"
+version = "0.2.2"
 description = "Interactive 3D vector visualization with query UI for vector databases"
 readme = "README.md"
 license = { text = "Apache-2.0" }
@@ -44,6 +44,9 @@ all = [
     "numpy>=1.24",
     "qdrant-client>=1.0",
     "chromadb>=0.4",
+    "pinecone-client>=3.0",
+    "weaviate-client>=4.0",
+    "lancedb>=0.1",
 ]
 
 [project.urls]

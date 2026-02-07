@@ -201,6 +201,8 @@ def _strip_imports_exports(code: str) -> str:
 def _rename_functions(code: str, prefix: str) -> str:
     """Strip imports/exports and rename functions with prefix."""
     code = _strip_imports_exports(code)
+    # Replace async function first to avoid "async async function" double-prefix
+    code = code.replace("async function executeQuery", f"async function {prefix}Execute")
     code = code.replace("function executeQuery", f"async function {prefix}Execute")
     code = code.replace("function toPoints", f"function {prefix}ToPoints")
     return code
