@@ -23,4 +23,4 @@ Query Format (JSON):
 
 from anywidget_vector.backends.qdrant.converter import build_filter, to_points
 
-__all__ = ["to_points", "build_filter"]
+__all__ = ["build_filter", "to_points"]

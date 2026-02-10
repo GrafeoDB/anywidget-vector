@@ -17,4 +17,4 @@ Query Format (Grafeo Query Language):
 from anywidget_vector.backends.grafeo.client import execute_query
 from anywidget_vector.backends.grafeo.converter import to_points
 
-__all__ = ["to_points", "execute_query"]
+__all__ = ["execute_query", "to_points"]

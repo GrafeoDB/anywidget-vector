@@ -18,4 +18,4 @@ Filter operators: $eq, $ne, $gt, $gte, $lt, $lte, $in, $nin
 
 from anywidget_vector.backends.pinecone.converter import build_filter, to_points
 
-__all__ = ["to_points", "build_filter"]
+__all__ = ["build_filter", "to_points"]

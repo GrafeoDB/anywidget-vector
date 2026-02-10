@@ -30,4 +30,4 @@ Query Format (GraphQL):
 
 from anywidget_vector.backends.weaviate.converter import build_where, to_points
 
-__all__ = ["to_points", "build_where"]
+__all__ = ["build_where", "to_points"]

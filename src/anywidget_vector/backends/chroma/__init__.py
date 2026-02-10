@@ -24,4 +24,4 @@ Combined: $and, $or
 from anywidget_vector.backends.chroma.client import execute_query
 from anywidget_vector.backends.chroma.converter import build_where, to_points
 
-__all__ = ["to_points", "build_where", "execute_query"]
+__all__ = ["build_where", "execute_query", "to_points"]
