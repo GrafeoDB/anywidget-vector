@@ -3,9 +3,9 @@ name = "anywidget-vector"
 version = "0.2.2"
 description = "Interactive 3D vector visualization with query UI for vector databases"
 readme = "README.md"
-license = { text = "Apache-2.0" }
+license = "Apache-2.0"
 requires-python = ">=3.12"
-authors = [{ name = "S.T. Grond", email = "widget@grafeo.dev" }]
+authors = [{ name = "S.T. Grond", email = "dev@grafeo.dev" }]
 keywords = ["anywidget", "vector", "visualization", "jupyter", "marimo"]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -65,21 +65,10 @@ line-length = 120
 target-version = "py312"
 
 [tool.ruff.lint]
-select = [
-    "E",
-    "F",
-    "I",
-    "UP",
-    "FA",
-    "Q",
-]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF"]
 
 [tool.ruff.lint.per-file-ignores]
 "src/anywidget_vector/widget.py" = ["E501"]  # Long lines in embedded JS
-
-[tool.ruff.lint.flake8-quotes]
-inline-quotes = "double"
-docstring-quotes = "double"
 
 [tool.ty.environment]
 python-version = "3.12"
