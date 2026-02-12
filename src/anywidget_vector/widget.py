@@ -84,12 +84,16 @@ class VectorSpace(anywidget.AnyWidget):
     connection_opacity = traitlets.Float(default_value=0.3).tag(sync=True)
 
     # === UI ===
-    show_toolbar = traitlets.Bool(default_value=False).tag(sync=True)
-    show_settings = traitlets.Bool(default_value=False).tag(sync=True)
-    show_properties = traitlets.Bool(default_value=False).tag(sync=True)
+    show_toolbar = traitlets.Bool(default_value=True).tag(sync=True)
+    show_settings = traitlets.Bool(default_value=True).tag(sync=True)
+    show_properties = traitlets.Bool(default_value=True).tag(sync=True)
 
     # === Backend ===
-    backend = traitlets.Unicode(default_value="qdrant").tag(sync=True)
+    backend = traitlets.Unicode(default_value="grafeo").tag(sync=True)
+
+    # === Grafeo Connection Mode ===
+    grafeo_connection_mode = traitlets.Unicode(default_value="embedded").tag(sync=True)
+    grafeo_server_url = traitlets.Unicode(default_value="http://localhost:7474").tag(sync=True)
     backend_config = traitlets.Dict(default_value={}).tag(sync=True)
     connection_status = traitlets.Unicode(default_value="disconnected").tag(sync=True)
 
@@ -97,6 +101,10 @@ class VectorSpace(anywidget.AnyWidget):
     query_input = traitlets.Unicode(default_value="").tag(sync=True)
     query_error = traitlets.Unicode(default_value=None, allow_none=True).tag(sync=True)
     _execute_query = traitlets.Int(default_value=0).tag(sync=True)
+
+    # === Demo Mode (auto-populate WASM and run query) ===
+    _demo_mode = traitlets.Bool(default_value=False).tag(sync=True)
+    _demo_data = traitlets.Unicode(default_value="").tag(sync=True)
 
     def __init__(self, points: list[dict[str, Any]] | None = None, **kwargs: Any) -> None:
         super().__init__(points=points or [], **kwargs)

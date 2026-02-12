@@ -25,6 +25,7 @@ def get_esm() -> str:
     # Read component files
     icons_js = _read_file(_STATIC_DIR / "icons.js")
     constants_js = _read_file(_UI_DIR / "constants.js")
+    sidebar_js = _read_file(_UI_DIR / "sidebar.js")
     toolbar_js = _read_file(_UI_DIR / "toolbar.js")
     settings_js = _read_file(_UI_DIR / "settings.js")
     properties_js = _read_file(_UI_DIR / "properties.js")
@@ -34,6 +35,8 @@ def get_esm() -> str:
     qdrant_client = _read_file(_BACKENDS_DIR / "qdrant" / "client.js")
     pinecone_client = _read_file(_BACKENDS_DIR / "pinecone" / "client.js")
     weaviate_client = _read_file(_BACKENDS_DIR / "weaviate" / "client.js")
+    grafeo_browser = _read_file(_BACKENDS_DIR / "grafeo" / "browser.js")
+    grafeo_embed = _read_file(_BACKENDS_DIR / "grafeo" / "embed.js")
 
     # Build combined ESM
     esm = f"""
@@ -57,15 +60,33 @@ import {{ OrbitControls }} from "https://esm.sh/three@0.160.0/addons/controls/Or
 // Weaviate
 {_rename_functions(weaviate_client, "weaviate")}
 
+// Grafeo Server
+{_rename_functions(grafeo_browser, "grafeoServer")}
+
+// Grafeo WASM (embed)
+{_prepare_grafeo_embed(grafeo_embed)}
+
 // Unified query executor
 async function executeBackendQuery(model) {{
   const backend = model.get("backend");
   const query = model.get("query_input");
   const config = model.get("backend_config") || {{}};
+  const mode = model.get("grafeo_connection_mode") || "embedded";
 
   let response, points;
 
-  if (backend === "qdrant") {{
+  if (backend === "grafeo" && mode === "server") {{
+    const serverUrl = model.get("grafeo_server_url") || "http://localhost:7474";
+    const serverConfig = {{ ...config, url: serverUrl, language: "gql" }};
+    response = await grafeoServerExecute(query, serverConfig);
+    points = grafeoServerToPoints(response);
+  }} else if (backend === "grafeo" && mode === "wasm") {{
+    if (!grafeoEmbedIsConnected()) {{
+      await grafeoEmbedConnect();
+    }}
+    response = await grafeoEmbedExecuteQuery(query, config);
+    points = grafeoEmbedToPoints(response);
+  }} else if (backend === "qdrant") {{
     response = await qdrantExecute(query, config);
     points = qdrantToPoints(response);
   }} else if (backend === "pinecone") {{
@@ -81,6 +102,9 @@ async function executeBackendQuery(model) {{
 
   return points;
 }}
+
+// === Sidebar (Explorer) ===
+{_strip_imports_exports(sidebar_js)}
 
 // === Toolbar ===
 {_strip_imports_exports(toolbar_js)}
@@ -101,6 +125,7 @@ function render({{ model, el }}) {{
   wrapper.style.width = model.get("width") + "px";
   el.appendChild(wrapper);
 
+  let sidebar = null;
   let settingsPanel = null;
   let propertiesPanel = null;
   let toolbarUI = null;
@@ -108,8 +133,21 @@ function render({{ model, el }}) {{
   if (model.get("show_toolbar")) {{
     toolbarUI = createToolbar(model, {{
       onRunQuery: () => runQuery(),
-      onToggleSettings: () => settingsPanel?.toggle(),
-      onToggleProperties: () => propertiesPanel?.toggle(),
+      onFilterInput: (text) => {{
+        if (canvas) {{
+          const result = canvas.applyFilter(text);
+          if (toolbarUI) toolbarUI.setFilterCount(result.matched, result.total);
+        }}
+      }},
+      onToggleSidebar: () => sidebar?.toggle(),
+      onToggleSettings: () => {{
+        if (propertiesPanel?.isOpen()) propertiesPanel.close();
+        settingsPanel?.toggle();
+      }},
+      onToggleProperties: () => {{
+        if (settingsPanel?.isOpen()) settingsPanel.close();
+        propertiesPanel?.toggle();
+      }},
     }});
     wrapper.appendChild(toolbarUI.element);
   }}
@@ -118,6 +156,12 @@ function render({{ model, el }}) {{
   main.className = "avs-main";
   main.style.height = model.get("height") + "px";
   wrapper.appendChild(main);
+
+  // Sidebar (left, explorer panel)
+  sidebar = createSidebar(model, {{
+    onClose: () => sidebar?.close(),
+  }});
+  main.appendChild(sidebar.element);
 
   const canvasContainer = document.createElement("div");
   canvasContainer.className = "avs-canvas-container";
@@ -142,6 +186,26 @@ function render({{ model, el }}) {{
   const canvas = createCanvas(model, canvasContainer, {{}});
 
   async function runQuery() {{
+    const query = model.get("query_input") || "";
+
+    // Always apply client-side filter
+    if (canvas) {{
+      const result = canvas.applyFilter(query);
+      if (toolbarUI) toolbarUI.setFilterCount(result.matched, result.total);
+    }}
+
+    // Additionally run a backend query if connected
+    const backend = model.get("backend");
+    const backendInfo = BACKENDS[backend];
+    const mode = model.get("grafeo_connection_mode") || "embedded";
+    const status = model.get("connection_status");
+
+    const isBrowserSide = (backendInfo && backendInfo.side === "browser") ||
+      (backend === "grafeo" && (mode === "server" || mode === "wasm"));
+    const hasBackend = isBrowserSide || status === "connected";
+
+    if (!hasBackend) return;
+
     if (toolbarUI) toolbarUI.setLoading(true);
 
     try {{
@@ -149,10 +213,7 @@ function render({{ model, el }}) {{
       model.set("connection_status", "connecting");
       model.save_changes();
 
-      const backend = model.get("backend");
-      const backendInfo = BACKENDS[backend];
-
-      if (backendInfo && backendInfo.side === "browser") {{
+      if (isBrowserSide) {{
         const points = await executeBackendQuery(model);
         model.set("points", points);
         model.set("connection_status", "connected");
@@ -205,4 +266,15 @@ def _rename_functions(code: str, prefix: str) -> str:
     code = code.replace("async function executeQuery", f"async function {prefix}Execute")
     code = code.replace("function executeQuery", f"async function {prefix}Execute")
     code = code.replace("function toPoints", f"function {prefix}ToPoints")
+    return code
+
+
+def _prepare_grafeo_embed(code: str) -> str:
+    """Strip imports/exports and rename for grafeo WASM embed backend."""
+    code = _strip_imports_exports(code)
+    code = code.replace("async function connect(", "async function grafeoEmbedConnect(")
+    code = code.replace("async function disconnect(", "async function grafeoEmbedDisconnect(")
+    code = code.replace("function isConnected(", "function grafeoEmbedIsConnected(")
+    code = code.replace("async function executeQuery(", "async function grafeoEmbedExecuteQuery(")
+    code = code.replace("function toPoints(", "function grafeoEmbedToPoints(")
     return code

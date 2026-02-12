@@ -38,6 +38,7 @@ export function createCanvas(model, container, callbacks) {
   let tooltip;
   let axesGroup, gridHelper;
   let animationId;
+  let resizeObserver;
 
   init();
   animate();
@@ -58,6 +59,17 @@ export function createCanvas(model, container, callbacks) {
     renderer.setSize(model.get("width"), model.get("height"));
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     container.appendChild(renderer.domElement);
+
+    // ResizeObserver for responsive sizing
+    resizeObserver = new ResizeObserver((entries) => {
+      const { width, height } = entries[0].contentRect;
+      if (width > 0 && height > 0) {
+        camera.aspect = width / height;
+        camera.updateProjectionMatrix();
+        renderer.setSize(width, height);
+      }
+    });
+    resizeObserver.observe(container);
 
     // Controls
     controls = new OrbitControls(camera, renderer.domElement);
@@ -472,6 +484,7 @@ export function createCanvas(model, container, callbacks) {
 
   function cleanup() {
     cancelAnimationFrame(animationId);
+    resizeObserver.disconnect();
     controls.dispose();
     renderer.dispose();
     scene.traverse((obj) => {
@@ -483,7 +496,77 @@ export function createCanvas(model, container, callbacks) {
     });
   }
 
-  return { cleanup };
+  function applyFilter(filterText) {
+    const points = model.get("points") || [];
+    const filter = (filterText || "").toLowerCase().trim();
+    const total = points.length;
+
+    if (!filter) {
+      // Reset all to full opacity
+      pointsGroup.children.forEach(obj => {
+        if (obj.userData.isInstanced) {
+          // Restore original colors from stored data
+          if (obj.userData._originalColors) {
+            const attr = obj.geometry.getAttribute("color");
+            attr.array.set(obj.userData._originalColors);
+            attr.needsUpdate = true;
+          }
+        } else if (obj.material) {
+          obj.material.opacity = 1;
+          obj.material.transparent = false;
+          obj.material.needsUpdate = true;
+        }
+      });
+      return { matched: total, total };
+    }
+
+    let matched = 0;
+    // Build match set from points data
+    const matchSet = new Set();
+    points.forEach((point, idx) => {
+      if (pointMatchesFilter(point, filter)) {
+        matchSet.add(idx);
+        matched++;
+      }
+    });
+
+    pointsGroup.children.forEach(obj => {
+      if (obj.userData.isInstanced) {
+        // Dim non-matching instances by darkening their color
+        const indices = obj.userData.pointIndices;
+        const attr = obj.geometry.getAttribute("color");
+        if (!obj.userData._originalColors) {
+          obj.userData._originalColors = new Float32Array(attr.array);
+        }
+        for (let i = 0; i < indices.length; i++) {
+          const matches = matchSet.has(indices[i]);
+          const dim = matches ? 1.0 : 0.12;
+          attr.array[i * 3] = obj.userData._originalColors[i * 3] * dim;
+          attr.array[i * 3 + 1] = obj.userData._originalColors[i * 3 + 1] * dim;
+          attr.array[i * 3 + 2] = obj.userData._originalColors[i * 3 + 2] * dim;
+        }
+        attr.needsUpdate = true;
+      } else if (obj.material) {
+        const idx = obj.userData.pointIndex;
+        const matches = matchSet.has(idx);
+        obj.material.transparent = !matches;
+        obj.material.opacity = matches ? 1.0 : 0.12;
+        obj.material.needsUpdate = true;
+      }
+    });
+
+    return { matched, total };
+  }
+
+  return { cleanup, applyFilter };
+}
+
+function pointMatchesFilter(point, filter) {
+  for (const [key, val] of Object.entries(point)) {
+    if (key === "x" || key === "y" || key === "z" || key === "vector") continue;
+    if (val != null && String(val).toLowerCase().includes(filter)) return true;
+  }
+  return false;
 }
 
 // Helper functions

@@ -1,6 +1,13 @@
 // UI constants shared across components
 
 export const BACKENDS = {
+  grafeo: {
+    name: "Grafeo",
+    side: "python",
+    modes: ["embedded", "server", "wasm"],
+    queryLanguage: "gql",
+    placeholder: "MATCH (n:Vector) RETURN n LIMIT 10",
+  },
   qdrant: {
     name: "Qdrant",
     side: "browser",
@@ -38,12 +45,6 @@ export const BACKENDS = {
     hasTable: true,
     queryLanguage: "sql",
     placeholder: 'category = "tech" AND year > 2020',
-  },
-  grafeo: {
-    name: "Grafeo",
-    side: "python",
-    queryLanguage: "grafeo",
-    placeholder: "MATCH (n:Vector) RETURN n LIMIT 10",
   },
 };
 

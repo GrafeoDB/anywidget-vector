@@ -50,16 +50,6 @@
   flex-shrink: 0;
 }
 
-.avs-backend-label {
-  padding: 6px 10px;
-  background: var(--avs-primary);
-  color: white;
-  border-radius: var(--avs-radius);
-  font-size: 12px;
-  font-weight: 600;
-  flex-shrink: 0;
-}
-
 .avs-query-input {
   flex: 1;
   min-width: 200px;
@@ -80,6 +70,17 @@
 
 .avs-query-input::placeholder {
   color: var(--avs-text-muted);
+}
+
+.avs-filter-count {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--avs-primary);
+  white-space: nowrap;
+  padding: 2px 6px;
+  background: rgba(99, 102, 241, 0.12);
+  border-radius: 8px;
+  font-variant-numeric: tabular-nums;
 }
 
 /* === Buttons === */
@@ -345,4 +346,130 @@
 
 .avs-tooltip-key {
   color: #999;
+}
+
+/* === Sidebar Sections === */
+.avs-sidebar-section {
+  border-bottom: 1px solid var(--avs-border);
+}
+
+.avs-collection-item {
+  padding: 8px 16px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--avs-text);
+  transition: background 0.1s;
+}
+
+.avs-collection-item:hover {
+  background: var(--avs-border);
+}
+
+.avs-collection-item.avs-active {
+  background: var(--avs-primary);
+  color: white;
+}
+
+.avs-dimension-content,
+.avs-cluster-content {
+  padding: 4px 0;
+}
+
+.avs-clickable {
+  cursor: pointer;
+}
+
+.avs-clickable:hover {
+  background: rgba(99, 102, 241, 0.1);
+}
+
+/* === Tablet (max-width: 1024px) === */
+@media (max-width: 1024px) {
+  .avs-panel.avs-open {
+    width: 240px;
+  }
+
+  .avs-panel-inner {
+    width: 240px;
+  }
+}
+
+/* === Mobile (max-width: 768px) === */
+@media (max-width: 768px) {
+  .avs-main {
+    position: relative;
+  }
+
+  .avs-panel {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    z-index: 10;
+  }
+
+  .avs-panel-left {
+    left: 0;
+  }
+
+  .avs-panel-right {
+    right: 0;
+  }
+
+  .avs-panel.avs-open {
+    width: 280px;
+  }
+
+  .avs-panel-inner {
+    width: 280px;
+  }
+
+  .avs-toolbar {
+    padding: 6px 8px;
+    gap: 4px;
+  }
+
+  .avs-query-input {
+    min-width: 0;
+    font-size: 12px;
+    padding: 6px 8px;
+  }
+
+  .avs-btn {
+    padding: 6px;
+  }
+}
+
+/* === Small Phone (max-width: 480px) === */
+@media (max-width: 480px) {
+  .avs-panel.avs-open {
+    width: 100%;
+  }
+
+  .avs-panel-inner {
+    width: 100%;
+  }
+}
+
+/* === Touch-Friendly Targets === */
+@media (pointer: coarse) {
+  .avs-btn {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .avs-property-row {
+    padding: 10px 16px;
+  }
+
+  .avs-form-group {
+    padding: 10px 16px;
+  }
+
+  .avs-collection-item {
+    padding: 12px 16px;
+  }
+
+  .avs-clickable {
+    padding: 10px 16px;
+  }
 }
