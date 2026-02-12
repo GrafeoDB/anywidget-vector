@@ -1,27 +1,29 @@
 // Toolbar component for VectorSpace widget
 import { ICONS } from "../static/icons.js";
-import { BACKENDS } from "./constants.js";
 
 export function createToolbar(model, callbacks) {
   const toolbar = document.createElement("div");
   toolbar.className = "avs-toolbar";
 
-  // Backend indicator (shows current backend name)
-  const backendLabel = document.createElement("span");
-  backendLabel.className = "avs-backend-label";
-  backendLabel.textContent = BACKENDS[model.get("backend")]?.name || "Qdrant";
-  toolbar.appendChild(backendLabel);
+  // Sidebar toggle (left, explorer panel)
+  const sidebarBtn = document.createElement("button");
+  sidebarBtn.className = "avs-btn";
+  sidebarBtn.innerHTML = ICONS.sidebar || ICONS.menu || '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/></svg>';
+  sidebarBtn.title = "Toggle explorer";
+  sidebarBtn.addEventListener("click", () => callbacks.onToggleSidebar?.());
+  toolbar.appendChild(sidebarBtn);
 
-  // Query input (native format for selected backend)
+  // Search / filter input
   const queryInput = document.createElement("input");
   queryInput.type = "text";
   queryInput.className = "avs-query-input";
-  queryInput.placeholder = getPlaceholder(model.get("backend"));
+  queryInput.placeholder = "Filter points...";
   queryInput.value = model.get("query_input") || "";
-  queryInput.title = getHelp(model.get("backend"));
+  queryInput.title = "Type to filter points by label or metadata";
   queryInput.addEventListener("input", () => {
     model.set("query_input", queryInput.value);
     model.save_changes();
+    callbacks.onFilterInput?.(queryInput.value);
   });
   queryInput.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -31,6 +33,12 @@ export function createToolbar(model, callbacks) {
   });
   toolbar.appendChild(queryInput);
 
+  // Filter count badge
+  const filterCount = document.createElement("span");
+  filterCount.className = "avs-filter-count";
+  filterCount.style.display = "none";
+  toolbar.appendChild(filterCount);
+
   // Run button
   const runBtn = document.createElement("button");
   runBtn.className = "avs-btn avs-btn-primary";
@@ -39,7 +47,7 @@ export function createToolbar(model, callbacks) {
   runBtn.addEventListener("click", () => callbacks.onRunQuery?.());
   toolbar.appendChild(runBtn);
 
-  // Settings button with status dot
+  // Settings button with status dot (mutual exclusion with properties)
   const settingsBtn = document.createElement("button");
   settingsBtn.className = "avs-btn avs-settings-btn";
   const statusDot = document.createElement("span");
@@ -51,7 +59,7 @@ export function createToolbar(model, callbacks) {
   settingsBtn.addEventListener("click", () => callbacks.onToggleSettings?.());
   toolbar.appendChild(settingsBtn);
 
-  // Properties toggle button
+  // Properties toggle button (mutual exclusion with settings)
   const propsBtn = document.createElement("button");
   propsBtn.className = "avs-btn";
   propsBtn.innerHTML = ICONS.cube;
@@ -62,13 +70,6 @@ export function createToolbar(model, callbacks) {
   // Model change listeners
   model.on("change:connection_status", () => {
     updateStatusDot(statusDot, model.get("connection_status"));
-  });
-
-  model.on("change:backend", () => {
-    const backend = model.get("backend");
-    backendLabel.textContent = BACKENDS[backend]?.name || backend;
-    queryInput.placeholder = getPlaceholder(backend);
-    queryInput.title = getHelp(backend);
   });
 
   return {
@@ -85,6 +86,14 @@ export function createToolbar(model, callbacks) {
         runBtn.disabled = false;
       }
     },
+    setFilterCount: (matched, total) => {
+      if (matched < total) {
+        filterCount.textContent = `${matched}/${total}`;
+        filterCount.style.display = "";
+      } else {
+        filterCount.style.display = "none";
+      }
+    },
   };
 }
 
@@ -92,26 +101,3 @@ function updateStatusDot(dot, status) {
   dot.className = `avs-status-dot avs-status-${status}`;
 }
 
-function getPlaceholder(backend) {
-  const placeholders = {
-    qdrant: '{"vector": [...], "limit": 10}',
-    pinecone: '{"vector": [...], "topK": 10}',
-    weaviate: '{ Get { Class(limit: 10) { ... } } }',
-    chroma: '{"query_embeddings": [...], "n_results": 10}',
-    lancedb: 'category = "tech" AND year > 2020',
-    grafeo: 'MATCH (n:Vector) RETURN n LIMIT 10',
-  };
-  return placeholders[backend] || "Enter query...";
-}
-
-function getHelp(backend) {
-  const help = {
-    qdrant: "JSON: vector, filter, limit, recommend, ids",
-    pinecone: "JSON: vector, filter, topK, namespace",
-    weaviate: "GraphQL: nearVector, nearText, where",
-    chroma: "Dict: query_embeddings, where, n_results",
-    lancedb: "SQL WHERE clause for filtering",
-    grafeo: "Grafeo query language",
-  };
-  return help[backend] || "";
-}

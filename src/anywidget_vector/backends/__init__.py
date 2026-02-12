@@ -29,6 +29,14 @@ class VectorBackend(Protocol):
 
 # Backend registry with metadata
 BACKENDS: dict[str, dict[str, Any]] = {
+    "grafeo": {
+        "name": "Grafeo",
+        "side": "python",
+        "query_language": "grafeo",
+        "placeholder": "MATCH (n:Vector) RETURN n LIMIT 10",
+        "help": "Grafeo query language (GQL, Cypher, SPARQL, Gremlin, GraphQL)",
+        "modes": ["embedded", "server", "wasm"],
+    },
     "qdrant": {
         "name": "Qdrant",
         "side": "browser",
@@ -63,13 +71,6 @@ BACKENDS: dict[str, dict[str, Any]] = {
         "query_language": "sql",
         "placeholder": "category = 'tech' AND year > 2020",
         "help": "SQL WHERE clause for filtering",
-    },
-    "grafeo": {
-        "name": "Grafeo",
-        "side": "python",
-        "query_language": "grafeo",
-        "placeholder": "MATCH (n:Vector) RETURN n LIMIT 10",
-        "help": "Grafeo query language",
     },
 }
 

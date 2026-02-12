@@ -31,16 +31,82 @@ export function createSettingsPanel(model, callbacks) {
     opt.textContent = `${config.name} (${config.side})`;
     backendSelect.appendChild(opt);
   });
-  backendSelect.value = model.get("backend") || "qdrant";
+  backendSelect.value = model.get("backend") || "grafeo";
   backendSelect.addEventListener("change", () => {
     model.set("backend", backendSelect.value);
     model.save_changes();
+    updateVisibility();
     updateConnectionFields(connFields, model);
   });
   backendGroup.appendChild(backendSelect);
   inner.appendChild(backendGroup);
 
-  // Connection fields container
+  // === Grafeo mode selector ===
+  const grafeoModeGroup = createFormGroup("Connection Mode");
+  const grafeoModeSelect = document.createElement("select");
+  grafeoModeSelect.className = "avs-select";
+  [
+    { id: "embedded", name: "Embedded (Python)" },
+    { id: "server", name: "Server (HTTP)" },
+    { id: "wasm", name: "WASM (Browser)" },
+  ].forEach((m) => {
+    const opt = document.createElement("option");
+    opt.value = m.id;
+    opt.textContent = m.name;
+    opt.selected = model.get("grafeo_connection_mode") === m.id;
+    grafeoModeSelect.appendChild(opt);
+  });
+  grafeoModeSelect.addEventListener("change", () => {
+    model.set("grafeo_connection_mode", grafeoModeSelect.value);
+    model.save_changes();
+    updateVisibility();
+  });
+  model.on("change:grafeo_connection_mode", () => {
+    grafeoModeSelect.value = model.get("grafeo_connection_mode");
+    updateVisibility();
+  });
+  grafeoModeGroup.appendChild(grafeoModeSelect);
+  inner.appendChild(grafeoModeGroup);
+
+  // === Grafeo server fields ===
+  const grafeoServerFields = document.createElement("div");
+  grafeoServerFields.className = "avs-grafeo-server-fields";
+
+  const serverUrlGroup = createFormGroup("Server URL");
+  const serverUrlInput = document.createElement("input");
+  serverUrlInput.type = "text";
+  serverUrlInput.className = "avs-input";
+  serverUrlInput.placeholder = "http://localhost:7474";
+  serverUrlInput.value = model.get("grafeo_server_url") || "http://localhost:7474";
+  serverUrlInput.addEventListener("input", () => {
+    model.set("grafeo_server_url", serverUrlInput.value);
+    model.save_changes();
+  });
+  serverUrlGroup.appendChild(serverUrlInput);
+  grafeoServerFields.appendChild(serverUrlGroup);
+
+  const serverAuthGroup = createFormGroup("Auth Token");
+  const serverAuthInput = document.createElement("input");
+  serverAuthInput.type = "password";
+  serverAuthInput.className = "avs-input";
+  serverAuthInput.placeholder = "(optional)";
+  serverAuthInput.addEventListener("input", () => {
+    const cfg = model.get("backend_config") || {};
+    cfg.authToken = serverAuthInput.value;
+    model.set("backend_config", cfg);
+    model.save_changes();
+  });
+  serverAuthGroup.appendChild(serverAuthInput);
+  grafeoServerFields.appendChild(serverAuthGroup);
+
+  inner.appendChild(grafeoServerFields);
+
+  // === Grafeo status note ===
+  const grafeoStatusNote = document.createElement("div");
+  grafeoStatusNote.className = "avs-note";
+  inner.appendChild(grafeoStatusNote);
+
+  // Connection fields container (for non-Grafeo backends)
   const connFields = document.createElement("div");
   connFields.className = "avs-connection-fields";
   inner.appendChild(connFields);
@@ -127,7 +193,37 @@ export function createSettingsPanel(model, callbacks) {
     }
   });
 
-  // Initialize connection fields
+  // Visibility update logic
+  function updateVisibility() {
+    const backend = model.get("backend") || "grafeo";
+    const mode = model.get("grafeo_connection_mode") || "embedded";
+    const isGrafeo = backend === "grafeo";
+
+    // Show/hide Grafeo-specific sections
+    grafeoModeGroup.style.display = isGrafeo ? "flex" : "none";
+    grafeoServerFields.style.display = isGrafeo && mode === "server" ? "block" : "none";
+
+    // Show/hide non-Grafeo connection fields
+    connFields.style.display = isGrafeo ? "none" : "block";
+
+    // Status note for Grafeo
+    if (isGrafeo) {
+      grafeoStatusNote.style.display = "block";
+      if (mode === "embedded") {
+        grafeoStatusNote.textContent = "Using Python-side Grafeo backend";
+      } else if (mode === "wasm") {
+        grafeoStatusNote.textContent = "WASM loads from CDN on first query";
+      } else {
+        grafeoStatusNote.textContent = "";
+        grafeoStatusNote.style.display = "none";
+      }
+    } else {
+      grafeoStatusNote.style.display = "none";
+    }
+  }
+
+  // Initialize
+  updateVisibility();
   updateConnectionFields(connFields, model);
 
   return {
@@ -152,9 +248,11 @@ function createFormGroup(label) {
 function updateConnectionFields(container, model) {
   container.innerHTML = "";
 
-  const backend = model.get("backend") || "qdrant";
+  const backend = model.get("backend") || "grafeo";
   const config = model.get("backend_config") || {};
   const backendInfo = BACKENDS[backend];
+
+  if (!backendInfo || backend === "grafeo") return;
 
   // URL field (for browser-side backends)
   if (backendInfo.side === "browser") {
@@ -236,11 +334,10 @@ function updateConnectionFields(container, model) {
 }
 
 function updateBackendConfig(model, container) {
-  const backend = model.get("backend") || "qdrant";
   const inputs = container.querySelectorAll(".avs-input");
   const config = {};
 
-  inputs.forEach((input, idx) => {
+  inputs.forEach((input) => {
     if (!input.value) return;
     const placeholder = input.placeholder.toLowerCase();
     if (placeholder.includes("http") || placeholder.includes("localhost")) {

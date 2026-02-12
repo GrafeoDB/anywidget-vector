@@ -1,6 +1,6 @@
 [project]
 name = "anywidget-vector"
-version = "0.2.2"
+version = "0.2.3"
 description = "Interactive 3D vector visualization with query UI for vector databases"
 readme = "README.md"
 license = "Apache-2.0"
@@ -26,11 +26,11 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-    "prek>=0.3.1",
+    "prek>=0.3.2",
     "pytest>=9.0.2",
     "ruff>=0.15.0",
-    "ty>=0.0.14",
-    "marimo>=0.19.7",
+    "ty>=0.0.16",
+    "marimo>=0.19.9",
 ]
 pandas = ["pandas>=2.0"]
 numpy = ["numpy>=1.24"]
@@ -39,14 +39,17 @@ chroma = ["chromadb>=0.4"]
 pinecone = ["pinecone-client>=3.0"]
 weaviate = ["weaviate-client>=4.0"]
 lancedb = ["lancedb>=0.1"]
+grafeo = ["grafeo>=0.5.0"]
+embed = []  # Marker extra — WASM loads from CDN on demand
+demo = []  # Marker extra — enables demo mode with pre-populated dataset
 all = [
-    "pandas>=2.0",
-    "numpy>=1.24",
+    "pandas>=3.0",
+    "numpy>=2.4",
     "qdrant-client>=1.0",
-    "chromadb>=0.4",
-    "pinecone-client>=3.0",
+    "chromadb>=1.5",
+    "pinecone-client>=6.0",
     "weaviate-client>=4.0",
-    "lancedb>=0.1",
+    "lancedb>=0.29.2",
 ]
 
 [project.urls]
