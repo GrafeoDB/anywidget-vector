@@ -64,7 +64,9 @@ class VectorSpace(anywidget.AnyWidget):
     # === Interaction ===
     selected_points = traitlets.List(default_value=[]).tag(sync=True)
     hovered_point = traitlets.Dict(default_value=None, allow_none=True).tag(sync=True)
-    selection_mode = traitlets.Unicode(default_value="click").tag(sync=True)
+    selection_mode = traitlets.CaselessStrEnum(
+        values=["click", "multi", "box"], default_value="click"
+    ).tag(sync=True)
 
     # === Tooltip ===
     show_tooltip = traitlets.Bool(default_value=True).tag(sync=True)
@@ -468,6 +470,354 @@ class VectorSpace(anywidget.AnyWidget):
     def to_json(self) -> str:
         """Export points as JSON."""
         return json.dumps(self.points)
+
+    def to_html(
+        self,
+        width: str = "100%",
+        height: str = "600px",
+        title: str = "Vector Visualization",
+    ) -> str:
+        """Generate a self-contained HTML string that renders the 3D visualization.
+
+        The output loads Three.js and OrbitControls from esm.sh CDN and embeds
+        the current points data plus visual settings. It renders a static 3D
+        point cloud with color/size mapping, orbit controls, optional axes and
+        grid, and a hover tooltip. No toolbar, panels, query, or backend code
+        is included.
+
+        Args:
+            width: CSS width for the container element.
+            height: CSS height for the container element.
+            title: HTML page title.
+
+        Returns:
+            A complete HTML document as a string.
+        """
+        options = {
+            "background": self.background,
+            "color_field": self.color_field,
+            "color_scale": self.color_scale,
+            "color_domain": self.color_domain,
+            "size_field": self.size_field,
+            "size_range": list(self.size_range),
+            "show_axes": self.show_axes,
+            "show_grid": self.show_grid,
+            "axis_labels": dict(self.axis_labels),
+        }
+        return _HTML_TEMPLATE.format(
+            title=title,
+            width=width,
+            height=height,
+            json_data=json.dumps(self.points),
+            json_options=json.dumps(options),
+        )
+
+    def save_html(self, path: str, **kwargs: Any) -> None:
+        """Save the visualization as a self-contained HTML file.
+
+        Args:
+            path: File path to write the HTML to.
+            **kwargs: Forwarded to ``to_html()`` (width, height, title).
+        """
+        from pathlib import Path
+
+        Path(path).write_text(self.to_html(**kwargs), encoding="utf-8")
+
+
+# === HTML Export Template ===
+
+_HTML_TEMPLATE = """\
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>{title}</title>
+<style>
+body {{ margin: 0; overflow: hidden; font-family: sans-serif; }}
+#container {{ width: {width}; height: {height}; position: relative; }}
+.tooltip {{
+  display: none;
+  position: absolute;
+  background: rgba(15, 15, 35, 0.92);
+  color: #e2e8f0;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  pointer-events: none;
+  z-index: 100;
+  max-width: 260px;
+  border: 1px solid rgba(99, 102, 241, 0.3);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}}
+.tooltip-label {{ font-weight: 600; margin-bottom: 4px; color: #a5b4fc; }}
+.tooltip-row {{ display: flex; justify-content: space-between; gap: 12px; }}
+.tooltip-key {{ color: #94a3b8; }}
+</style>
+</head>
+<body>
+<div id="container"></div>
+<div id="tooltip" class="tooltip"></div>
+<script type="module">
+import * as THREE from "https://esm.sh/three@0.160.0";
+import {{ OrbitControls }} from "https://esm.sh/three@0.160.0/examples/jsm/controls/OrbitControls.js";
+
+const DATA = {json_data};
+const OPTIONS = {json_options};
+
+// ---------------------------------------------------------------------------
+// Color scales (same LUT data used by the live widget)
+// ---------------------------------------------------------------------------
+const COLOR_SCALES = {{
+  viridis: [[0.267,0.004,0.329],[0.282,0.140,0.458],[0.253,0.265,0.530],[0.206,0.371,0.553],[0.163,0.471,0.558],[0.127,0.566,0.551],[0.134,0.658,0.518],[0.267,0.749,0.441],[0.478,0.821,0.318],[0.741,0.873,0.150],[0.993,0.906,0.144]],
+  plasma: [[0.050,0.030,0.528],[0.254,0.014,0.615],[0.417,0.001,0.658],[0.578,0.015,0.643],[0.716,0.135,0.538],[0.826,0.268,0.407],[0.906,0.411,0.271],[0.959,0.567,0.137],[0.981,0.733,0.106],[0.964,0.903,0.259],[0.940,0.975,0.131]],
+  inferno: [[0.001,0.000,0.014],[0.046,0.031,0.186],[0.140,0.046,0.357],[0.258,0.039,0.406],[0.366,0.071,0.432],[0.478,0.107,0.429],[0.591,0.148,0.404],[0.706,0.206,0.347],[0.815,0.290,0.259],[0.905,0.411,0.145],[0.969,0.565,0.026]],
+  magma: [[0.001,0.000,0.014],[0.035,0.028,0.144],[0.114,0.049,0.315],[0.206,0.053,0.431],[0.306,0.064,0.505],[0.413,0.086,0.531],[0.529,0.113,0.527],[0.654,0.158,0.501],[0.776,0.232,0.459],[0.878,0.338,0.418],[0.953,0.468,0.392]],
+  cividis: [[0.000,0.135,0.304],[0.000,0.179,0.345],[0.117,0.222,0.360],[0.214,0.263,0.365],[0.293,0.304,0.370],[0.366,0.345,0.375],[0.437,0.387,0.382],[0.509,0.429,0.393],[0.582,0.473,0.409],[0.659,0.520,0.431],[0.739,0.570,0.461]],
+  turbo: [[0.190,0.072,0.232],[0.254,0.265,0.530],[0.163,0.471,0.558],[0.134,0.658,0.518],[0.478,0.821,0.318],[0.741,0.873,0.150],[0.993,0.906,0.144],[0.988,0.652,0.198],[0.925,0.394,0.235],[0.796,0.177,0.214],[0.480,0.016,0.110]],
+}};
+
+const CATEGORICAL_COLORS = [
+  "#6366f1", "#f59e0b", "#10b981", "#ef4444", "#8b5cf6",
+  "#06b6d4", "#f97316", "#84cc16", "#ec4899", "#14b8a6"
+];
+
+// ---------------------------------------------------------------------------
+// Color / size helpers
+// ---------------------------------------------------------------------------
+function hashString(str) {{
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {{
+    hash = ((hash << 5) - hash) + str.charCodeAt(i);
+    hash |= 0;
+  }}
+  return Math.abs(hash);
+}}
+
+function getColorFromScale(value, scaleName, domain) {{
+  const scale = COLOR_SCALES[scaleName] || COLOR_SCALES.viridis;
+  const [min, max] = domain || [0, 1];
+  const range = max - min;
+  const t = range > 0 ? Math.max(0, Math.min(1, (value - min) / range)) : 0.5;
+  const idx = t * (scale.length - 1);
+  const i = Math.floor(idx);
+  const f = idx - i;
+  if (i >= scale.length - 1) {{
+    const c = scale[scale.length - 1];
+    return new THREE.Color(c[0], c[1], c[2]);
+  }}
+  const c1 = scale[i], c2 = scale[i + 1];
+  return new THREE.Color(
+    c1[0] + f * (c2[0] - c1[0]),
+    c1[1] + f * (c2[1] - c1[1]),
+    c1[2] + f * (c2[2] - c1[2])
+  );
+}}
+
+function getCategoricalColor(value) {{
+  const idx = hashString(String(value)) % CATEGORICAL_COLORS.length;
+  return new THREE.Color(CATEGORICAL_COLORS[idx]);
+}}
+
+function getPointColor(point, opts) {{
+  if (point.color) return new THREE.Color(point.color);
+  if (opts.colorField && point[opts.colorField] !== undefined) {{
+    const value = point[opts.colorField];
+    if (typeof value === "number") {{
+      return getColorFromScale(value, opts.colorScale, opts.colorDomain);
+    }}
+    return getCategoricalColor(value);
+  }}
+  return new THREE.Color(0x6366f1);
+}}
+
+function getPointSize(point, opts) {{
+  if (point.size !== undefined) return point.size;
+  if (opts.sizeField && point[opts.sizeField] !== undefined && opts.sizeDomain) {{
+    const [min, max] = opts.sizeDomain;
+    const t = max > min ? (point[opts.sizeField] - min) / (max - min) : 0.5;
+    return opts.sizeRange[0] + t * (opts.sizeRange[1] - opts.sizeRange[0]);
+  }}
+  return (opts.sizeRange[0] + opts.sizeRange[1]) * 0.5;
+}}
+
+// ---------------------------------------------------------------------------
+// Prepare options
+// ---------------------------------------------------------------------------
+const opts = {{
+  colorField: OPTIONS.color_field || null,
+  colorScale: OPTIONS.color_scale || "viridis",
+  colorDomain: OPTIONS.color_domain || null,
+  sizeField: OPTIONS.size_field || null,
+  sizeRange: OPTIONS.size_range || [0.02, 0.1],
+  sizeDomain: null,
+}};
+
+// Compute color domain from data when not explicitly set
+if (opts.colorField && !opts.colorDomain) {{
+  const values = DATA.map(p => p[opts.colorField]).filter(v => typeof v === "number");
+  if (values.length > 0) opts.colorDomain = [Math.min(...values), Math.max(...values)];
+}}
+
+// Compute size domain from data
+if (opts.sizeField) {{
+  const values = DATA.map(p => p[opts.sizeField]).filter(v => typeof v === "number");
+  if (values.length > 0) opts.sizeDomain = [Math.min(...values), Math.max(...values)];
+}}
+
+// ---------------------------------------------------------------------------
+// Scene setup
+// ---------------------------------------------------------------------------
+const container = document.getElementById("container");
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(OPTIONS.background || "#1a1a2e");
+
+const width = container.clientWidth;
+const height = container.clientHeight;
+const camera = new THREE.PerspectiveCamera(60, width / height, 0.01, 1000);
+camera.position.set(5, 5, 5);
+camera.lookAt(0, 0, 0);
+
+const renderer = new THREE.WebGLRenderer({{ antialias: true }});
+renderer.setSize(width, height);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+container.appendChild(renderer.domElement);
+
+// Lighting
+scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+const directional = new THREE.DirectionalLight(0xffffff, 0.8);
+directional.position.set(5, 10, 7);
+scene.add(directional);
+
+// Controls
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.05;
+
+// ---------------------------------------------------------------------------
+// Axes and grid
+// ---------------------------------------------------------------------------
+if (OPTIONS.show_axes) {{
+  const axes = new THREE.AxesHelper(1.2);
+  scene.add(axes);
+  const labels = OPTIONS.axis_labels || {{ x: "X", y: "Y", z: "Z" }};
+  function addAxisLabel(text, position, color) {{
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d");
+    canvas.width = 64; canvas.height = 32;
+    ctx.font = "bold 24px Arial";
+    ctx.fillStyle = "#" + color.toString(16).padStart(6, "0");
+    ctx.textAlign = "center";
+    ctx.fillText(text, 32, 24);
+    const texture = new THREE.CanvasTexture(canvas);
+    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({{ map: texture }}));
+    sprite.position.set(position[0], position[1], position[2]);
+    sprite.scale.set(0.25, 0.125, 1);
+    scene.add(sprite);
+  }}
+  addAxisLabel(labels.x || "X", [1.3, 0, 0], 0xff4444);
+  addAxisLabel(labels.y || "Y", [0, 1.3, 0], 0x44ff44);
+  addAxisLabel(labels.z || "Z", [0, 0, 1.3], 0x4444ff);
+}}
+
+if (OPTIONS.show_grid) {{
+  const gridHelper = new THREE.GridHelper(2, 10, 0x444444, 0x333333);
+  scene.add(gridHelper);
+}}
+
+// ---------------------------------------------------------------------------
+// Points
+// ---------------------------------------------------------------------------
+const pointsGroup = new THREE.Group();
+scene.add(pointsGroup);
+
+if (DATA.length > 0) {{
+  DATA.forEach((point, idx) => {{
+    const geometry = new THREE.SphereGeometry(1, 16, 16);
+    const color = getPointColor(point, opts);
+    const material = new THREE.MeshPhongMaterial({{ color }});
+    const mesh = new THREE.Mesh(geometry, material);
+    const size = getPointSize(point, opts);
+    mesh.scale.set(size, size, size);
+    mesh.position.set(point.x ?? 0, point.y ?? 0, point.z ?? 0);
+    mesh.userData = {{ pointIndex: idx, pointId: point.id || "point_" + idx }};
+    pointsGroup.add(mesh);
+  }});
+
+  // Auto-fit camera to data bounds
+  const box = new THREE.Box3();
+  DATA.forEach(p => box.expandByPoint(new THREE.Vector3(p.x ?? 0, p.y ?? 0, p.z ?? 0)));
+  const center = box.getCenter(new THREE.Vector3());
+  const bsize = box.getSize(new THREE.Vector3()).length();
+  const distance = bsize / (2 * Math.tan(Math.PI * camera.fov / 360));
+  controls.target.copy(center);
+  camera.position.copy(center.clone().add(new THREE.Vector3(distance * 0.6, distance * 0.6, distance * 0.6)));
+  controls.update();
+}}
+
+// ---------------------------------------------------------------------------
+// Tooltip via raycasting
+// ---------------------------------------------------------------------------
+const tooltipEl = document.getElementById("tooltip");
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+
+container.addEventListener("mousemove", (event) => {{
+  const rect = container.getBoundingClientRect();
+  mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+  mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+  raycaster.setFromCamera(mouse, camera);
+  const intersects = raycaster.intersectObjects(pointsGroup.children, true);
+
+  if (intersects.length > 0) {{
+    const hit = intersects[0];
+    const idx = hit.object.userData.pointIndex;
+    const point = DATA[idx];
+    if (point) {{
+      let html = "";
+      if (point.label) html += '<div class="tooltip-label">' + point.label + "</div>";
+      for (const [key, val] of Object.entries(point)) {{
+        if (key === "label" || key === "vector") continue;
+        let display = val;
+        if (typeof val === "number") display = val.toFixed(3);
+        html += '<div class="tooltip-row"><span class="tooltip-key">' + key + ':</span><span>' + display + "</span></div>";
+      }}
+      tooltipEl.innerHTML = html;
+      tooltipEl.style.display = "block";
+      tooltipEl.style.left = (event.clientX - rect.left + 15) + "px";
+      tooltipEl.style.top = (event.clientY - rect.top + 15) + "px";
+    }}
+  }} else {{
+    tooltipEl.style.display = "none";
+  }}
+}});
+
+// ---------------------------------------------------------------------------
+// Animation loop
+// ---------------------------------------------------------------------------
+function animate() {{
+  requestAnimationFrame(animate);
+  controls.update();
+  renderer.render(scene, camera);
+}}
+animate();
+
+// ---------------------------------------------------------------------------
+// Resize handler
+// ---------------------------------------------------------------------------
+window.addEventListener("resize", () => {{
+  const w = container.clientWidth;
+  const h = container.clientHeight;
+  if (w > 0 && h > 0) {{
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+    renderer.setSize(w, h);
+  }}
+}});
+</script>
+</body>
+</html>
+"""
 
 
 # === Helper Functions ===
