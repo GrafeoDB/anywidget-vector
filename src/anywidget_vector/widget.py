@@ -64,9 +64,7 @@ class VectorSpace(anywidget.AnyWidget):
     # === Interaction ===
     selected_points = traitlets.List(default_value=[]).tag(sync=True)
     hovered_point = traitlets.Dict(default_value=None, allow_none=True).tag(sync=True)
-    selection_mode = traitlets.CaselessStrEnum(
-        values=["click", "multi", "box"], default_value="click"
-    ).tag(sync=True)
+    selection_mode = traitlets.CaselessStrEnum(values=["click", "multi", "box"], default_value="click").tag(sync=True)
 
     # === Tooltip ===
     show_tooltip = traitlets.Bool(default_value=True).tag(sync=True)
