@@ -104,6 +104,7 @@ export function createCanvas(model, container, callbacks) {
     setupBoxSelection();
     createPoints();
     createConnections();
+    fitToView();
     bindModelEvents();
   }
 
@@ -428,6 +429,19 @@ export function createCanvas(model, container, callbacks) {
     container.appendChild(tooltip);
   }
 
+  function fitToView() {
+    const points = model.get("points") || [];
+    if (points.length === 0) return;
+    const box = new THREE.Box3();
+    points.forEach(p => box.expandByPoint(new THREE.Vector3(p.x ?? 0, p.y ?? 0, p.z ?? 0)));
+    const center = box.getCenter(new THREE.Vector3());
+    const size = box.getSize(new THREE.Vector3()).length();
+    const distance = size / (2 * Math.tan(Math.PI * camera.fov / 360));
+    controls.target.copy(center);
+    camera.position.copy(center.clone().add(new THREE.Vector3(0, 0, distance * 1.2)));
+    controls.update();
+  }
+
   function setupZoomControls() {
     const zoomControls = document.createElement("div");
     zoomControls.className = "avs-zoom-controls";
@@ -455,18 +469,7 @@ export function createCanvas(model, container, callbacks) {
     zoomFitBtn.className = "avs-zoom-btn";
     zoomFitBtn.innerHTML = ICONS.zoomFit;
     zoomFitBtn.title = "Fit to view";
-    zoomFitBtn.addEventListener("click", () => {
-      const points = model.get("points") || [];
-      if (points.length === 0) return;
-      const box = new THREE.Box3();
-      points.forEach(p => box.expandByPoint(new THREE.Vector3(p.x ?? 0, p.y ?? 0, p.z ?? 0)));
-      const center = box.getCenter(new THREE.Vector3());
-      const size = box.getSize(new THREE.Vector3()).length();
-      const distance = size / (2 * Math.tan(Math.PI * camera.fov / 360));
-      controls.target.copy(center);
-      camera.position.copy(center.clone().add(new THREE.Vector3(0, 0, distance * 1.2)));
-      controls.update();
-    });
+    zoomFitBtn.addEventListener("click", fitToView);
 
     zoomControls.appendChild(zoomInBtn);
     zoomControls.appendChild(zoomOutBtn);
@@ -633,7 +636,7 @@ export function createCanvas(model, container, callbacks) {
   }
 
   function bindModelEvents() {
-    model.on("change:points", () => { createPoints(); createConnections(); });
+    model.on("change:points", () => { createPoints(); createConnections(); fitToView(); });
     model.on("change:background", () => { scene.background = new THREE.Color(model.get("background")); });
     model.on("change:show_axes", setupAxesAndGrid);
     model.on("change:show_grid", setupAxesAndGrid);
