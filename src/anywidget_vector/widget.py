@@ -358,6 +358,82 @@ class VectorSpace(anywidget.AnyWidget):
         )
         return cls(points=to_points(response), **kwargs)
 
+    @classmethod
+    def from_pinecone(
+        cls,
+        index: Any,
+        *,
+        namespace: str = "",
+        limit: int = 5000,
+        **kwargs: Any,
+    ) -> VectorSpace:
+        """Create from a Pinecone index.
+
+        Uses list() to fetch vectors, then converts via the Pinecone converter.
+
+        Args:
+            index: pinecone.Index instance.
+            namespace: Namespace to query (default: "").
+            limit: Maximum number of vectors to fetch.
+            **kwargs: Additional widget options.
+        """
+        from anywidget_vector.backends.pinecone.converter import to_points
+
+        response = index.query(
+            vector=[0.0] * index.describe_index_stats()["dimension"],
+            top_k=limit,
+            include_values=True,
+            include_metadata=True,
+            namespace=namespace,
+        )
+        return cls(points=to_points(response), **kwargs)
+
+    @classmethod
+    def from_weaviate(
+        cls,
+        client: Any,
+        class_name: str,
+        *,
+        limit: int = 5000,
+        **kwargs: Any,
+    ) -> VectorSpace:
+        """Create from a Weaviate collection.
+
+        Fetches objects with vectors using a GraphQL Get query.
+
+        Args:
+            client: weaviate.Client instance.
+            class_name: Weaviate class name to query.
+            limit: Maximum number of objects to fetch.
+            **kwargs: Additional widget options.
+        """
+        from anywidget_vector.backends.weaviate.converter import to_points
+
+        response = client.query.get(class_name).with_additional(["id", "vector"]).with_limit(limit).do()
+        return cls(points=to_points(response, class_name), **kwargs)
+
+    @classmethod
+    def from_lancedb(
+        cls,
+        table: Any,
+        *,
+        limit: int = 5000,
+        **kwargs: Any,
+    ) -> VectorSpace:
+        """Create from a LanceDB table.
+
+        Reads rows from the table and converts them to visualization points.
+
+        Args:
+            table: lancedb.table.Table instance.
+            limit: Maximum number of rows to fetch.
+            **kwargs: Additional widget options.
+        """
+        from anywidget_vector.backends.lancedb.converter import to_points
+
+        results = table.to_pandas().head(limit).to_dict("records")
+        return cls(points=to_points(results), **kwargs)
+
     # === Distance Methods ===
 
     def compute_distances(

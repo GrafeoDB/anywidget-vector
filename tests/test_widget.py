@@ -1,5 +1,7 @@
 """Tests for VectorSpace widget."""
 
+import json
+
 from anywidget_vector import VectorSpace
 
 
@@ -494,3 +496,142 @@ class TestConnectionTraits:
         assert widget.k_neighbors == 5
         assert widget.connection_color == "#ff0000"
         assert widget.connection_opacity == 0.5
+
+
+class TestToHtml:
+    """Test to_html / save_html export."""
+
+    def test_to_html_returns_string(self):
+        """to_html() returns a non-empty HTML string."""
+        widget = VectorSpace(
+            points=[
+                {"id": "a", "x": 0, "y": 0, "z": 0},
+                {"id": "b", "x": 1, "y": 1, "z": 1},
+            ]
+        )
+        html = widget.to_html()
+        assert isinstance(html, str)
+        assert len(html) > 0
+
+    def test_to_html_structure(self):
+        """The HTML contains essential structural elements."""
+        widget = VectorSpace(points=[{"id": "a", "x": 0, "y": 0, "z": 0}])
+        html = widget.to_html()
+        assert "<!DOCTYPE html>" in html
+        assert "<title>Vector Visualization</title>" in html
+        assert 'id="container"' in html
+        assert 'id="tooltip"' in html
+        assert "three@0.160.0" in html
+
+    def test_to_html_embeds_data(self):
+        """Point data is serialized into the HTML."""
+        widget = VectorSpace(points=[{"id": "p1", "x": 0.5, "y": 0.3, "z": 0.8, "label": "Test"}])
+        html = widget.to_html()
+        assert "p1" in html
+        assert "Test" in html
+        assert "0.5" in html
+
+    def test_to_html_embeds_options(self):
+        """Visual settings appear in the OPTIONS JSON."""
+        widget = VectorSpace(
+            points=[],
+            background="#000000",
+            color_field="cluster",
+            show_axes=False,
+        )
+        html = widget.to_html()
+        assert "#000000" in html
+        assert '"color_field": "cluster"' in html or '"color_field":"cluster"' in html
+        assert '"show_axes": false' in html or '"show_axes":false' in html
+
+    def test_to_html_custom_title(self):
+        """Custom title, width, height appear in the output."""
+        widget = VectorSpace(points=[])
+        html = widget.to_html(title="My Vectors", width="900px", height="500px")
+        assert "<title>My Vectors</title>" in html
+        assert "900px" in html
+        assert "500px" in html
+
+    def test_to_html_empty(self):
+        """to_html() works on empty widget."""
+        widget = VectorSpace()
+        html = widget.to_html()
+        assert "<!DOCTYPE html>" in html
+
+    def test_save_html(self, tmp_path):
+        """save_html() writes an HTML file to disk."""
+        widget = VectorSpace(
+            points=[{"id": "a", "x": 0, "y": 0, "z": 0}],
+        )
+        out = tmp_path / "vectors.html"
+        widget.save_html(str(out), title="Saved Vectors")
+        assert out.exists()
+        content = out.read_text(encoding="utf-8")
+        assert "<title>Saved Vectors</title>" in content
+        assert "three@0.160.0" in content
+
+
+class TestToJson:
+    """Test to_json export."""
+
+    def test_to_json_valid(self):
+        """to_json returns valid JSON."""
+        widget = VectorSpace(points=[{"id": "a", "x": 1, "y": 2, "z": 3}])
+        result = json.loads(widget.to_json())
+        assert len(result) == 1
+        assert result[0]["id"] == "a"
+
+    def test_to_json_empty(self):
+        """to_json on empty widget returns empty list."""
+        widget = VectorSpace()
+        result = json.loads(widget.to_json())
+        assert result == []
+
+
+class TestSetBackend:
+    """Test set_backend method."""
+
+    def test_set_backend_returns_self(self):
+        """set_backend is chainable."""
+        widget = VectorSpace()
+        result = widget.set_backend("chroma", client=None)
+        assert result is widget
+
+    def test_set_backend_configures_state(self):
+        """set_backend sets backend, client, and shows toolbar."""
+        widget = VectorSpace(show_toolbar=False, show_settings=False)
+        widget.set_backend("lancedb", client="mock_client", collection="test")
+        assert widget.backend == "lancedb"
+        assert widget._backend_client == "mock_client"
+        assert widget.backend_config == {"collection": "test"}
+        assert widget.show_toolbar is True
+        assert widget.show_settings is True
+
+
+class TestSelectionModeTraitlet:
+    """Test selection_mode CaselessStrEnum."""
+
+    def test_valid_modes(self):
+        """All valid selection modes can be set."""
+        for mode in ("click", "multi", "box"):
+            widget = VectorSpace(selection_mode=mode)
+            assert widget.selection_mode == mode
+
+    def test_case_insensitive(self):
+        """Selection mode is case-insensitive (normalizes to lowercase)."""
+        widget = VectorSpace(selection_mode="BOX")
+        assert widget.selection_mode == "box"
+
+
+class TestFocusOnEdgeCases:
+    """Test focus_on edge cases."""
+
+    def test_focus_on_empty_ids(self):
+        """focus_on with empty list does not crash."""
+        widget = VectorSpace(points=[{"id": "a", "x": 0, "y": 0, "z": 0}])
+        widget.focus_on([])  # Should not raise
+
+    def test_focus_on_nonexistent_id(self):
+        """focus_on with nonexistent ID does not crash."""
+        widget = VectorSpace(points=[{"id": "a", "x": 0, "y": 0, "z": 0}])
+        widget.focus_on(["nonexistent"])  # Should not raise

@@ -8,8 +8,8 @@ Works with Marimo, Jupyter, VS Code, Colab, anywhere [anywidget](https://anywidg
 
 - **Universal**: One widget, every notebook environment
 - **6D Visualization**: X, Y, Z position + Color, Shape, Size encoding
-- **Backend-agnostic**: NumPy, pandas, Qdrant, Chroma, or raw dicts
-- **Interactive**: Orbit, pan, zoom, click, hover, select
+- **Backend-agnostic**: NumPy, pandas, Qdrant, Chroma, Pinecone, Weaviate, LanceDB, or raw dicts
+- **Interactive**: Orbit, pan, zoom, click, hover, box select
 - **Customizable**: Color scales, shapes, sizes, themes
 - **Performant**: Instanced rendering for large point clouds
 
@@ -38,8 +38,6 @@ widget
 ### Dictionary
 
 ```python
-from anywidget_vector import VectorSpace
-
 widget = VectorSpace.from_dict({
     "points": [
         {"id": "a", "x": 0, "y": 0, "z": 0},
@@ -52,7 +50,6 @@ widget = VectorSpace.from_dict({
 
 ```python
 import numpy as np
-from anywidget_vector import VectorSpace
 
 positions = np.random.randn(100, 3)
 widget = VectorSpace.from_numpy(positions)
@@ -62,7 +59,6 @@ widget = VectorSpace.from_numpy(positions)
 
 ```python
 import pandas as pd
-from anywidget_vector import VectorSpace
 
 df = pd.DataFrame({
     "x": [0.1, 0.5, 0.9],
@@ -83,9 +79,7 @@ widget = VectorSpace.from_dataframe(
 
 ```python
 import umap
-from anywidget_vector import VectorSpace
 
-# Reduce high-dimensional data to 3D
 embedding = umap.UMAP(n_components=3).fit_transform(high_dim_data)
 widget = VectorSpace.from_umap(embedding, labels=labels)
 ```
@@ -94,7 +88,6 @@ widget = VectorSpace.from_umap(embedding, labels=labels)
 
 ```python
 from qdrant_client import QdrantClient
-from anywidget_vector import VectorSpace
 
 client = QdrantClient("localhost", port=6333)
 widget = VectorSpace.from_qdrant(client, "my_collection", limit=5000)
@@ -104,11 +97,39 @@ widget = VectorSpace.from_qdrant(client, "my_collection", limit=5000)
 
 ```python
 import chromadb
-from anywidget_vector import VectorSpace
 
 client = chromadb.Client()
 collection = client.get_collection("embeddings")
 widget = VectorSpace.from_chroma(collection)
+```
+
+### Pinecone
+
+```python
+from pinecone import Pinecone
+
+pc = Pinecone(api_key="...")
+index = pc.Index("my-index")
+widget = VectorSpace.from_pinecone(index, limit=5000)
+```
+
+### Weaviate
+
+```python
+import weaviate
+
+client = weaviate.Client("http://localhost:8080")
+widget = VectorSpace.from_weaviate(client, "Article", limit=5000)
+```
+
+### LanceDB
+
+```python
+import lancedb
+
+db = lancedb.connect("~/.lancedb")
+table = db.open_table("vectors")
+widget = VectorSpace.from_lancedb(table, limit=5000)
 ```
 
 ## Visual Encoding
@@ -169,7 +190,6 @@ widget = VectorSpace(points=data)
 @widget.on_click
 def handle_click(point_id, point_data):
     print(f"Clicked: {point_id}")
-    print(f"Data: {point_data}")
 
 @widget.on_hover
 def handle_hover(point_id, point_data):
@@ -184,36 +204,19 @@ def handle_selection(point_ids, points_data):
 ### Selection
 
 ```python
-widget.selected_points          # Get current selection
-widget.select(["a", "b"])       # Select points
-widget.clear_selection()        # Clear
+widget.selected_points              # Current selection
+widget.select(["a", "b"])           # Select points
+widget.clear_selection()            # Clear
+widget.selection_mode = "box"       # Switch to box-select mode
 ```
 
 ### Camera
 
 ```python
-widget.camera_position          # Get position [x, y, z]
-widget.camera_target            # Get target [x, y, z]
-widget.reset_camera()           # Reset to default
-widget.focus_on(["a", "b"])     # Focus on specific points
-```
-
-## Options
-
-```python
-widget = VectorSpace(
-    points=data,
-    width=1000,
-    height=700,
-    background="#1a1a2e",         # Dark theme default
-    show_axes=True,
-    show_grid=True,
-    axis_labels={"x": "PC1", "y": "PC2", "z": "PC3"},
-    show_tooltip=True,
-    tooltip_fields=["label", "x", "y", "z", "cluster"],
-    selection_mode="click",       # "click" or "multi"
-    use_instancing=True,          # Performance: instanced rendering
-)
+widget.camera_position              # Get position [x, y, z]
+widget.camera_target                # Get target [x, y, z]
+widget.reset_camera()               # Reset to default
+widget.focus_on(["a", "b"])         # Focus on specific points
 ```
 
 ## Distance Metrics
@@ -232,7 +235,6 @@ Compute distances and visualize similarity relationships between points.
 ### Color by Distance
 
 ```python
-# Color points by distance from a reference
 widget.color_by_distance("point_a")
 widget.color_by_distance("point_a", metric="cosine")
 ```
@@ -240,21 +242,16 @@ widget.color_by_distance("point_a", metric="cosine")
 ### Find Neighbors
 
 ```python
-# Find k nearest neighbors
 neighbors = widget.find_neighbors("point_a", k=5)
 # Returns: [("point_b", 0.1), ("point_c", 0.2), ...]
 
-# Find neighbors within distance threshold
 neighbors = widget.find_neighbors("point_a", threshold=0.5)
 ```
 
 ### Show Connections
 
 ```python
-# Draw lines to k-nearest neighbors
 widget.show_neighbors("point_a", k=5)
-
-# Draw lines to all points within threshold
 widget.show_neighbors("point_a", threshold=0.3)
 
 # Manual connection settings
@@ -271,7 +268,6 @@ widget = VectorSpace(
 ### Compute Distances
 
 ```python
-# Get distances from reference to all points
 distances = widget.compute_distances("point_a")
 # Returns: {"point_b": 0.1, "point_c": 0.5, ...}
 
@@ -279,26 +275,57 @@ distances = widget.compute_distances("point_a")
 distances = widget.compute_distances(
     "point_a",
     metric="cosine",
-    vector_field="embedding"  # Use full embedding vector
+    vector_field="embedding"
 )
+```
+
+## Options
+
+```python
+widget = VectorSpace(
+    points=data,
+    width=1000,
+    height=700,
+    background="#1a1a2e",         # Dark theme default
+    show_axes=True,
+    show_grid=True,
+    axis_labels={"x": "PC1", "y": "PC2", "z": "PC3"},
+    show_tooltip=True,
+    tooltip_fields=["label", "x", "y", "z", "cluster"],
+    selection_mode="click",       # "click", "multi", or "box"
+    use_instancing=True,          # Performance: instanced rendering
+)
+```
+
+## Backends
+
+Configure a backend for interactive querying:
+
+```python
+widget.set_backend("chroma", client=collection)
+widget.set_backend("lancedb", client=table)
+widget.set_backend("grafeo", client=db)
 ```
 
 ## Export
 
 ```python
-widget.to_json()                # Export points as JSON string
+widget.to_json()                            # Points as JSON string
+widget.to_html()                            # Self-contained HTML string
+widget.to_html(title="My Vectors")          # Custom title
+widget.save_html("vectors.html")            # Write HTML to file
 ```
 
 ## Environment Support
 
 | Environment | Supported |
 |-------------|-----------|
-| Marimo | ✅ |
-| JupyterLab | ✅ |
-| Jupyter Notebook | ✅ |
-| VS Code | ✅ |
-| Google Colab | ✅ |
-| Databricks | ✅ |
+| Marimo | Yes |
+| JupyterLab | Yes |
+| Jupyter Notebook | Yes |
+| VS Code | Yes |
+| Google Colab | Yes |
+| Databricks | Yes |
 
 ## Related
 
