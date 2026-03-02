@@ -39,6 +39,93 @@
   display: block;
 }
 
+/* === ZOOM CONTROLS === */
+.avs-zoom-controls {
+  position: absolute;
+  bottom: 12px;
+  right: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  z-index: 10;
+}
+
+.avs-zoom-btn {
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--avs-border);
+  background: var(--avs-bg);
+  color: var(--avs-text);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: all 0.15s;
+  padding: 0;
+}
+
+.avs-zoom-btn:hover {
+  background: var(--avs-surface);
+  border-color: var(--avs-text-muted);
+}
+
+.avs-zoom-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* === Selection Rectangle (box mode overlay) === */
+.avs-selection-rect {
+  position: absolute;
+  border: 1px dashed #6366f1;
+  background: rgba(99, 102, 241, 0.1);
+  pointer-events: none;
+  z-index: 20;
+  display: none;
+}
+
+/* === Mode Switcher === */
+.avs-mode-group {
+  position: absolute;
+  bottom: 12px;
+  left: 12px;
+  display: flex;
+  gap: 2px;
+  z-index: 10;
+}
+
+.avs-mode-btn {
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--avs-border);
+  background: var(--avs-bg);
+  color: var(--avs-text);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: all 0.15s;
+  padding: 0;
+}
+
+.avs-mode-btn:hover {
+  background: var(--avs-surface);
+  border-color: var(--avs-text-muted);
+}
+
+.avs-mode-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+.avs-mode-btn.avs-mode-active {
+  background: rgba(99, 102, 241, 0.5);
+  color: #fff;
+  border-color: #6366f1;
+}
+
 /* === Toolbar === */
 .avs-toolbar {
   display: flex;

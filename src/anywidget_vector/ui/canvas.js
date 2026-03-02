@@ -39,6 +39,8 @@ export function createCanvas(model, container, callbacks) {
   let axesGroup, gridHelper;
   let animationId;
   let resizeObserver;
+  let selectionRect, boxOverlay;
+  let currentMode = model.get("selection_mode") || "click";
 
   init();
   animate();
@@ -97,6 +99,9 @@ export function createCanvas(model, container, callbacks) {
     setupAxesAndGrid();
     setupRaycaster();
     setupTooltip();
+    setupZoomControls();
+    setupModeControls();
+    setupBoxSelection();
     createPoints();
     createConnections();
     bindModelEvents();
@@ -379,6 +384,9 @@ export function createCanvas(model, container, callbacks) {
   }
 
   function onClick(event) {
+    // Box mode handles selection via the overlay, not raycaster clicks
+    if (currentMode === "box") return;
+
     const rect = container.getBoundingClientRect();
     mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
     mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
@@ -400,7 +408,7 @@ export function createCanvas(model, container, callbacks) {
 
       if (selectionMode === "click") {
         model.set("selected_points", [pointId]);
-      } else {
+      } else if (selectionMode === "multi") {
         if (currentSelection.includes(pointId)) {
           model.set("selected_points", currentSelection.filter(id => id !== pointId));
         } else {
@@ -418,6 +426,183 @@ export function createCanvas(model, container, callbacks) {
     tooltip = document.createElement("div");
     tooltip.className = "avs-tooltip";
     container.appendChild(tooltip);
+  }
+
+  function setupZoomControls() {
+    const zoomControls = document.createElement("div");
+    zoomControls.className = "avs-zoom-controls";
+
+    const zoomInBtn = document.createElement("button");
+    zoomInBtn.className = "avs-zoom-btn";
+    zoomInBtn.innerHTML = ICONS.zoomIn;
+    zoomInBtn.title = "Zoom in";
+    zoomInBtn.addEventListener("click", () => {
+      camera.position.lerp(controls.target, 0.3);
+      controls.update();
+    });
+
+    const zoomOutBtn = document.createElement("button");
+    zoomOutBtn.className = "avs-zoom-btn";
+    zoomOutBtn.innerHTML = ICONS.zoomOut;
+    zoomOutBtn.title = "Zoom out";
+    zoomOutBtn.addEventListener("click", () => {
+      const dir = camera.position.clone().sub(controls.target).normalize();
+      camera.position.add(dir.multiplyScalar(0.5));
+      controls.update();
+    });
+
+    const zoomFitBtn = document.createElement("button");
+    zoomFitBtn.className = "avs-zoom-btn";
+    zoomFitBtn.innerHTML = ICONS.zoomFit;
+    zoomFitBtn.title = "Fit to view";
+    zoomFitBtn.addEventListener("click", () => {
+      const points = model.get("points") || [];
+      if (points.length === 0) return;
+      const box = new THREE.Box3();
+      points.forEach(p => box.expandByPoint(new THREE.Vector3(p.x ?? 0, p.y ?? 0, p.z ?? 0)));
+      const center = box.getCenter(new THREE.Vector3());
+      const size = box.getSize(new THREE.Vector3()).length();
+      const distance = size / (2 * Math.tan(Math.PI * camera.fov / 360));
+      controls.target.copy(center);
+      camera.position.copy(center.clone().add(new THREE.Vector3(0, 0, distance * 1.2)));
+      controls.update();
+    });
+
+    zoomControls.appendChild(zoomInBtn);
+    zoomControls.appendChild(zoomOutBtn);
+    zoomControls.appendChild(zoomFitBtn);
+    container.appendChild(zoomControls);
+  }
+
+  function setupModeControls() {
+    const modeGroup = document.createElement("div");
+    modeGroup.className = "avs-mode-group";
+
+    const clickBtn = document.createElement("button");
+    clickBtn.className = "avs-mode-btn avs-mode-active";
+    clickBtn.innerHTML = ICONS.cursor;
+    clickBtn.title = "Click / multi-select mode";
+    clickBtn.dataset.mode = "click";
+
+    const boxBtn = document.createElement("button");
+    boxBtn.className = "avs-mode-btn";
+    boxBtn.innerHTML = ICONS.boxSelect;
+    boxBtn.title = "Box select mode";
+    boxBtn.dataset.mode = "box";
+
+    function setActiveMode(mode) {
+      currentMode = mode;
+      model.set("selection_mode", mode === "box" ? "box" : "click");
+      model.save_changes();
+
+      clickBtn.classList.toggle("avs-mode-active", mode !== "box");
+      boxBtn.classList.toggle("avs-mode-active", mode === "box");
+
+      // Toggle orbit controls: disabled in box mode so drag draws the rectangle
+      controls.enabled = (mode !== "box");
+
+      // Show/hide box overlay
+      if (boxOverlay) {
+        boxOverlay.style.display = (mode === "box") ? "block" : "none";
+      }
+    }
+
+    clickBtn.addEventListener("click", () => setActiveMode("click"));
+    boxBtn.addEventListener("click", () => setActiveMode("box"));
+
+    modeGroup.appendChild(clickBtn);
+    modeGroup.appendChild(boxBtn);
+    container.appendChild(modeGroup);
+
+    // Sync with model changes from Python side
+    model.on("change:selection_mode", () => {
+      const mode = model.get("selection_mode") || "click";
+      if (mode !== currentMode) setActiveMode(mode);
+    });
+  }
+
+  function setupBoxSelection() {
+    // Transparent overlay that captures mouse events in box mode
+    boxOverlay = document.createElement("div");
+    boxOverlay.style.cssText = "position:absolute;top:0;left:0;width:100%;height:100%;z-index:15;display:none;cursor:crosshair;";
+    container.appendChild(boxOverlay);
+
+    // Visual selection rectangle
+    selectionRect = document.createElement("div");
+    selectionRect.className = "avs-selection-rect";
+    container.appendChild(selectionRect);
+
+    let dragging = false;
+    let startX = 0, startY = 0;
+
+    boxOverlay.addEventListener("mousedown", (e) => {
+      if (currentMode !== "box") return;
+      e.preventDefault();
+      dragging = true;
+      const rect = container.getBoundingClientRect();
+      startX = e.clientX - rect.left;
+      startY = e.clientY - rect.top;
+      selectionRect.style.left = startX + "px";
+      selectionRect.style.top = startY + "px";
+      selectionRect.style.width = "0px";
+      selectionRect.style.height = "0px";
+      selectionRect.style.display = "block";
+    });
+
+    boxOverlay.addEventListener("mousemove", (e) => {
+      if (!dragging) return;
+      const rect = container.getBoundingClientRect();
+      const curX = e.clientX - rect.left;
+      const curY = e.clientY - rect.top;
+      const x = Math.min(startX, curX);
+      const y = Math.min(startY, curY);
+      const w = Math.abs(curX - startX);
+      const h = Math.abs(curY - startY);
+      selectionRect.style.left = x + "px";
+      selectionRect.style.top = y + "px";
+      selectionRect.style.width = w + "px";
+      selectionRect.style.height = h + "px";
+    });
+
+    boxOverlay.addEventListener("mouseup", (e) => {
+      if (!dragging) return;
+      dragging = false;
+      selectionRect.style.display = "none";
+
+      const rect = container.getBoundingClientRect();
+      const endX = e.clientX - rect.left;
+      const endY = e.clientY - rect.top;
+
+      const x1 = Math.min(startX, endX);
+      const y1 = Math.min(startY, endY);
+      const x2 = Math.max(startX, endX);
+      const y2 = Math.max(startY, endY);
+
+      // Ignore tiny drags (likely accidental clicks)
+      if (x2 - x1 < 4 && y2 - y1 < 4) return;
+
+      const selectedIds = getPointsInScreenRect(
+        camera, model.get("points") || [],
+        { x1, y1, x2, y2 },
+        rect.width, rect.height
+      );
+      model.set("selected_points", selectedIds);
+      model.save_changes();
+    });
+  }
+
+  function getPointsInScreenRect(cam, points, rect, canvasWidth, canvasHeight) {
+    const { x1, y1, x2, y2 } = rect;
+    const selected = [];
+    points.forEach(p => {
+      const pos = new THREE.Vector3(p.x ?? 0, p.y ?? 0, p.z ?? 0).project(cam);
+      const sx = (pos.x * 0.5 + 0.5) * canvasWidth;
+      const sy = (-pos.y * 0.5 + 0.5) * canvasHeight;
+      if (sx >= x1 && sx <= x2 && sy >= y1 && sy <= y2) {
+        selected.push(p.id || `point_${points.indexOf(p)}`);
+      }
+    });
+    return selected;
   }
 
   function showTooltip(event, point) {
