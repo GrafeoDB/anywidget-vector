@@ -47,7 +47,7 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
-  z-index: 10;
+  z-index: 25;
 }
 
 .avs-zoom-btn {
@@ -87,37 +87,11 @@
 
 /* === Mode Switcher === */
 .avs-mode-group {
-  position: absolute;
-  bottom: 12px;
-  left: 12px;
   display: flex;
   gap: 2px;
-  z-index: 10;
-}
-
-.avs-mode-btn {
-  width: 32px;
-  height: 32px;
-  border: 1px solid var(--avs-border);
-  background: var(--avs-bg);
-  color: var(--avs-text);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 4px;
-  transition: all 0.15s;
-  padding: 0;
-}
-
-.avs-mode-btn:hover {
-  background: var(--avs-surface);
-  border-color: var(--avs-text-muted);
-}
-
-.avs-mode-btn svg {
-  width: 16px;
-  height: 16px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid rgba(255,255,255,0.15);
+  padding-bottom: 6px;
 }
 
 .avs-mode-btn.avs-mode-active {
