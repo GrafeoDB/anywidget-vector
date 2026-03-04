@@ -50,7 +50,7 @@ wheels = [
 
 [[package]]
 name = "anywidget-vector"
-version = "0.2.3"
+version = "0.2.5"
 source = { editable = "." }
 dependencies = [
     { name = "anywidget" },
@@ -109,30 +109,30 @@ requires-dist = [
     { name = "anywidget", specifier = ">=0.9.21" },
     { name = "chromadb", marker = "extra == 'all'", specifier = ">=1.5" },
     { name = "chromadb", marker = "extra == 'chroma'", specifier = ">=0.4" },
-    { name = "grafeo", marker = "extra == 'grafeo'", specifier = ">=0.5.0" },
+    { name = "grafeo", marker = "extra == 'grafeo'", specifier = ">=0.5" },
     { name = "lancedb", marker = "extra == 'all'", specifier = ">=0.29.2" },
     { name = "lancedb", marker = "extra == 'lancedb'", specifier = ">=0.1" },
-    { name = "marimo", marker = "extra == 'dev'", specifier = ">=0.19.9" },
+    { name = "marimo", marker = "extra == 'dev'", specifier = ">=0.20" },
     { name = "numpy", marker = "extra == 'all'", specifier = ">=2.4" },
     { name = "numpy", marker = "extra == 'numpy'", specifier = ">=1.24" },
-    { name = "pandas", marker = "extra == 'all'", specifier = ">=3.0" },
+    { name = "pandas", marker = "extra == 'all'", specifier = ">=3" },
     { name = "pandas", marker = "extra == 'pandas'", specifier = ">=2.0" },
     { name = "pinecone-client", marker = "extra == 'all'", specifier = ">=6.0" },
     { name = "pinecone-client", marker = "extra == 'pinecone'", specifier = ">=3.0" },
     { name = "prek", marker = "extra == 'dev'", specifier = ">=0.3.2" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=9.0.2" },
-    { name = "qdrant-client", marker = "extra == 'all'", specifier = ">=1.0" },
+    { name = "qdrant-client", marker = "extra == 'all'", specifier = ">=1" },
     { name = "qdrant-client", marker = "extra == 'qdrant'", specifier = ">=1.0" },
-    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.15.0" },
-    { name = "ty", marker = "extra == 'dev'", specifier = ">=0.0.16" },
-    { name = "weaviate-client", marker = "extra == 'all'", specifier = ">=4.0" },
+    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.15" },
+    { name = "ty", marker = "extra == 'dev'", specifier = ">=0.0.20" },
+    { name = "weaviate-client", marker = "extra == 'all'", specifier = ">=4.20" },
     { name = "weaviate-client", marker = "extra == 'weaviate'", specifier = ">=4.0" },
 ]
 
 [package.metadata.requires-dev]
 dev = [
     { name = "pytest", specifier = ">=9.0.2" },
-    { name = "ruff", specifier = ">=0.14.14" },
+    { name = "ruff", specifier = ">=0.15" },
 ]
 
 [[package]]
@@ -2827,7 +2827,7 @@ wheels = [
 
 [[package]]
 name = "weaviate-client"
-version = "4.19.2"
+version = "4.20.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "authlib" },
@@ -2838,9 +2838,9 @@ dependencies = [
     { name = "pydantic" },
     { name = "validators" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/0b/57/f3201e5047d91aa9e7a06aa004b995bc8b05b2ea95dd178ace17eaaec16e/weaviate_client-4.19.2.tar.gz", hash = "sha256:99e76e912c95762436089cd5feedbfeea31e892aa13b6ad94729a2a54b316c45", size = 786448 }
+sdist = { url = "https://files.pythonhosted.org/packages/6a/0e/450732a620dec30e5c13d0e5ba6ea81cd2b168ffb5a1e6cfa034da2fd988/weaviate_client-4.20.1.tar.gz", hash = "sha256:7d3c4835292b17d54757c3f62921e87975c01f26869db787250cebef2a17bd80", size = 807802 }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/d5/09/636abb5ecfae2316b6584eaae7001a03abfe131f72d747fbec3419075524/weaviate_client-4.19.2-py3-none-any.whl", hash = "sha256:e78306d47c574c4035c87223e480bb77bd6e54142a21c4c58522dd43019fe493", size = 603652 },
+    { url = "https://files.pythonhosted.org/packages/de/3a/a2c74bfbdc5f8acbab8025205520448dcece82942206a9861ec48ccad03f/weaviate_client-4.20.1-py3-none-any.whl", hash = "sha256:6ca36bb8752c39589bfc856c1232cbcb627f69141e7a741b592e2516888f59d8", size = 618735 },
 ]
 
 [[package]]

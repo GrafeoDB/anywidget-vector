@@ -101,10 +101,29 @@ export function createCanvas(model, container, callbacks) {
     setupTooltip();
     setupZoomControls();
     setupBoxSelection();
+    setupKeyboardShortcuts();
     createPoints();
     createConnections();
     fitToView();
     bindModelEvents();
+  }
+
+  function setupKeyboardShortcuts() {
+    container.tabIndex = 0;
+    container.style.outline = "none";
+    container.addEventListener("keydown", (e) => {
+      const tag = e.target.tagName;
+      if (tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA") return;
+
+      if (e.key === "f" || e.key === "F") {
+        e.preventDefault();
+        fitToView();
+      } else if (e.key === "Escape") {
+        model.set("selected_points", []);
+        model.set("hovered_point", null);
+        model.save_changes();
+      }
+    });
   }
 
   function setupAxesAndGrid() {
