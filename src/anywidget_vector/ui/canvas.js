@@ -100,12 +100,30 @@ export function createCanvas(model, container, callbacks) {
     setupRaycaster();
     setupTooltip();
     setupZoomControls();
-    setupModeControls();
     setupBoxSelection();
+    setupKeyboardShortcuts();
     createPoints();
     createConnections();
     fitToView();
     bindModelEvents();
+  }
+
+  function setupKeyboardShortcuts() {
+    container.tabIndex = 0;
+    container.style.outline = "none";
+    container.addEventListener("keydown", (e) => {
+      const tag = e.target.tagName;
+      if (tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA") return;
+
+      if (e.key === "f" || e.key === "F") {
+        e.preventDefault();
+        fitToView();
+      } else if (e.key === "Escape") {
+        model.set("selected_points", []);
+        model.set("hovered_point", null);
+        model.save_changes();
+      }
+    });
   }
 
   function setupAxesAndGrid() {
@@ -471,27 +489,19 @@ export function createCanvas(model, container, callbacks) {
     zoomFitBtn.title = "Fit to view";
     zoomFitBtn.addEventListener("click", fitToView);
 
-    zoomControls.appendChild(zoomInBtn);
-    zoomControls.appendChild(zoomOutBtn);
-    zoomControls.appendChild(zoomFitBtn);
-    container.appendChild(zoomControls);
-  }
-
-  function setupModeControls() {
+    // Mode switcher (above zoom buttons, inside same column)
     const modeGroup = document.createElement("div");
     modeGroup.className = "avs-mode-group";
 
     const clickBtn = document.createElement("button");
-    clickBtn.className = "avs-mode-btn avs-mode-active";
+    clickBtn.className = "avs-zoom-btn avs-mode-btn avs-mode-active";
     clickBtn.innerHTML = ICONS.cursor;
     clickBtn.title = "Click / multi-select mode";
-    clickBtn.dataset.mode = "click";
 
     const boxBtn = document.createElement("button");
-    boxBtn.className = "avs-mode-btn";
+    boxBtn.className = "avs-zoom-btn avs-mode-btn";
     boxBtn.innerHTML = ICONS.boxSelect;
     boxBtn.title = "Box select mode";
-    boxBtn.dataset.mode = "box";
 
     function setActiveMode(mode) {
       currentMode = mode;
@@ -513,15 +523,20 @@ export function createCanvas(model, container, callbacks) {
     clickBtn.addEventListener("click", () => setActiveMode("click"));
     boxBtn.addEventListener("click", () => setActiveMode("box"));
 
-    modeGroup.appendChild(clickBtn);
-    modeGroup.appendChild(boxBtn);
-    container.appendChild(modeGroup);
-
     // Sync with model changes from Python side
     model.on("change:selection_mode", () => {
       const mode = model.get("selection_mode") || "click";
       if (mode !== currentMode) setActiveMode(mode);
     });
+
+    modeGroup.appendChild(clickBtn);
+    modeGroup.appendChild(boxBtn);
+
+    zoomControls.appendChild(modeGroup);
+    zoomControls.appendChild(zoomInBtn);
+    zoomControls.appendChild(zoomOutBtn);
+    zoomControls.appendChild(zoomFitBtn);
+    container.appendChild(zoomControls);
   }
 
   function setupBoxSelection() {

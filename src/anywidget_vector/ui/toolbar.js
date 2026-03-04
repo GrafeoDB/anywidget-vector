@@ -39,6 +39,17 @@ export function createToolbar(model, callbacks) {
   filterCount.style.display = "none";
   toolbar.appendChild(filterCount);
 
+  // Point count badge
+  const countBadge = document.createElement("span");
+  countBadge.className = "avs-count-badge";
+  function updatePointCount() {
+    const pts = model.get("points") || [];
+    countBadge.textContent = `${pts.length} points`;
+  }
+  updatePointCount();
+  model.on("change:points", updatePointCount);
+  toolbar.appendChild(countBadge);
+
   // Run button
   const runBtn = document.createElement("button");
   runBtn.className = "avs-btn avs-btn-primary";
