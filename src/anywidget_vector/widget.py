@@ -358,7 +358,9 @@ class VectorSpace(anywidget.AnyWidget):
         if all(v is not None for v in vecs):
             return np.array(vecs, dtype=np.float64)
 
-        raise ValueError("No vectors available. Use set_vectors(), add_numpy() with D > 3, or ensure points have a 'vector' field.")
+        raise ValueError(
+            "No vectors available. Use set_vectors(), add_numpy() with D > 3, or ensure points have a 'vector' field."
+        )
 
     # === Factory Methods ===
 
