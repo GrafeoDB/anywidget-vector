@@ -4,6 +4,8 @@ Interactive 3D vector visualization for Python notebooks.
 
 Works with Marimo, Jupyter, VS Code, Colab, anywhere [anywidget](https://anywidget.dev/) runs.
 
+![anywidget-vector demo](assets/demo.png)
+
 ## Features
 
 - **Universal**: One widget, every notebook environment
