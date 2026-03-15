@@ -314,8 +314,6 @@ class VectorSpace(anywidget.AnyWidget):
         Returns:
             Self for chaining.
         """
-        import numpy as np
-
         vectors = self._resolve_vectors()
         n_components = min(n_components, vectors.shape[1])
 

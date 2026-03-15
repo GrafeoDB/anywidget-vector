@@ -52,7 +52,7 @@ def _(np):
     cluster_names = ["alpha", "beta", "gamma", "delta", "epsilon"]
 
     vectors = np.vstack([make_cluster(c) for c in centers])
-    groups = [name for name, c in zip(cluster_names, centers) for _ in range(80)]
+    groups = [name for name, c in zip(cluster_names, centers, strict=True) for _ in range(80)]
     labels = [f"{g}-{i}" for i, g in enumerate(groups)]
 
     f"Generated {len(vectors)} points in {n_dims}D across 5 clusters"
@@ -89,8 +89,8 @@ def _(VectorSpace, groups, labels, method, vectors):
 
 
 @app.cell
-def _(method, w):
-    f"Showing **{method.value.upper()}** projection of {len(w.points)} points"
+def _(mo, method, w):
+    mo.md(f"Showing **{method.value.upper()}** projection of {len(w.points)} points")
     return
 
 
