@@ -40,6 +40,7 @@ pinecone = ["pinecone-client>=3.0"]
 weaviate = ["weaviate-client>=4.0"]
 lancedb = ["lancedb>=0.1"]
 grafeo = ["grafeo>=0.5"]
+projection = ["scikit-learn>=1.3", "umap-learn>=0.5"]
 embed = []  # Marker extra — WASM loads from CDN on demand
 demo = []  # Marker extra — enables demo mode with pre-populated dataset
 all = [

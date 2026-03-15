@@ -1,21 +1,21 @@
 # /// script
 # requires-python = ">=3.12"
 # dependencies = [
-#     "anywidget-vector",
+#     "anywidget-vector==0.2.5",
 #     "marimo",
-#     "numpy",
+#     "numpy==2.4.3",
 # ]
 # ///
+
 import marimo
 
-__generated_with = "0.20.0"
+__generated_with = "0.18.4"
 app = marimo.App(width="medium")
 
 
 @app.cell
 def _():
     import marimo as mo
-
     return (mo,)
 
 
@@ -24,13 +24,14 @@ def _():
     import numpy as np
 
     from anywidget_vector import VectorSpace
-
     return VectorSpace, np
 
 
 @app.cell(hide_code=True)
 def _(mo):
-    mo.md("""# Test: `add_numpy`""")
+    mo.md("""
+    # Test: `add_numpy`
+    """)
     return
 
 

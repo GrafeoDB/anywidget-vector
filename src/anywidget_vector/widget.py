@@ -109,6 +109,7 @@ class VectorSpace(anywidget.AnyWidget):
     def __init__(self, points: list[dict[str, Any]] | None = None, **kwargs: Any) -> None:
         super().__init__(points=points or [], **kwargs)
         self._backend_client: Any = None
+        self._vectors: Any = None  # High-dim vectors for projection (numpy array, not synced to JS)
         self.observe(self._on_execute_query, names=["_execute_query"])
 
     # === Backend Configuration ===
@@ -233,8 +234,12 @@ class VectorSpace(anywidget.AnyWidget):
     ) -> VectorSpace:
         """Append points from a NumPy array.
 
+        For arrays with D > 3 columns, the full vectors are stored internally
+        and PCA is used for the initial 3D coordinates. Call ``project()`` to
+        switch projection methods interactively.
+
         Args:
-            positions: Array of shape (N, 2) or (N, 3).
+            positions: Array of shape (N, 2), (N, 3), or (N, D) for high-dim data.
             ids: Optional list of point IDs.
             labels: Optional list of labels.
             metadata: Optional dict mapping field names to per-point value lists.
@@ -242,15 +247,29 @@ class VectorSpace(anywidget.AnyWidget):
         Returns:
             Self for chaining.
         """
-        pos_list = _to_list(positions)
+        import numpy as np
+
+        arr = np.asarray(positions, dtype=np.float64)
+        n_samples, n_dims = arr.shape
+
+        # High-dimensional: store vectors and project to 3D
+        if n_dims > 3:
+            if self._vectors is not None:
+                self._vectors = np.vstack([self._vectors, arr])
+            else:
+                self._vectors = arr
+            coords = _pca(arr, n_components=3)
+        else:
+            coords = arr
+
         offset = len(self.points)
         new_points = []
-        for i, p in enumerate(pos_list):
+        for i in range(n_samples):
             point: dict[str, Any] = {
                 "id": ids[i] if ids else f"point_{offset + i}",
-                "x": float(p[0]),
-                "y": float(p[1]),
-                "z": float(p[2]) if len(p) > 2 else 0.0,
+                "x": float(coords[i, 0]),
+                "y": float(coords[i, 1]),
+                "z": float(coords[i, 2]) if coords.shape[1] > 2 else 0.0,
             }
             if labels:
                 point["label"] = labels[i]
@@ -260,6 +279,88 @@ class VectorSpace(anywidget.AnyWidget):
             new_points.append(point)
         self.points = [*self.points, *new_points]
         return self
+
+    # === Projection ===
+
+    def set_vectors(self, vectors: Any) -> VectorSpace:
+        """Store high-dimensional vectors for use with ``project()``.
+
+        Must have the same number of rows as ``self.points``.
+
+        Args:
+            vectors: Array-like of shape (N, D).
+
+        Returns:
+            Self for chaining.
+        """
+        import numpy as np
+
+        self._vectors = np.asarray(vectors, dtype=np.float64)
+        return self
+
+    def project(self, method: str = "pca", *, n_components: int = 3, **kwargs: Any) -> VectorSpace:
+        """Reproject point coordinates using dimensionality reduction.
+
+        Reads vectors from ``set_vectors()`` / ``add_numpy()`` (for D > 3), or
+        falls back to extracting the ``vector`` field from each point dict.
+
+        Supported methods: ``pca``, ``tsne``, ``umap``.
+
+        Args:
+            method: Projection algorithm name.
+            n_components: Target dimensions (2 or 3).
+            **kwargs: Passed to the underlying algorithm.
+
+        Returns:
+            Self for chaining.
+        """
+        import numpy as np
+
+        vectors = self._resolve_vectors()
+        n_components = min(n_components, vectors.shape[1])
+
+        if method == "pca":
+            coords = _pca(vectors, n_components=n_components)
+        elif method == "tsne":
+            coords = _tsne(vectors, n_components=n_components, **kwargs)
+        elif method == "umap":
+            coords = _umap(vectors, n_components=n_components, **kwargs)
+        else:
+            raise ValueError(f"Unknown projection method: {method!r}. Use 'pca', 'tsne', or 'umap'.")
+
+        # Normalize to roughly [-1, 1] so the scene stays well-framed
+        for col in range(coords.shape[1]):
+            c = coords[:, col]
+            lo, hi = c.min(), c.max()
+            if hi - lo > 0:
+                coords[:, col] = 2 * (c - lo) / (hi - lo) - 1
+
+        points = [dict(p) for p in self.points]
+        for i, p in enumerate(points):
+            p["x"] = float(coords[i, 0])
+            p["y"] = float(coords[i, 1])
+            p["z"] = float(coords[i, 2]) if n_components >= 3 else 0.0
+        self.points = points
+        return self
+
+    def _resolve_vectors(self) -> Any:
+        """Get the vector matrix for projection."""
+        import numpy as np
+
+        if self._vectors is not None:
+            if len(self._vectors) != len(self.points):
+                raise ValueError(
+                    f"Stored vectors ({len(self._vectors)}) don't match point count ({len(self.points)}). "
+                    "Call set_vectors() again after modifying points."
+                )
+            return self._vectors
+
+        # Fall back to point["vector"] fields
+        vecs = [p.get("vector") for p in self.points]
+        if all(v is not None for v in vecs):
+            return np.array(vecs, dtype=np.float64)
+
+        raise ValueError("No vectors available. Use set_vectors(), add_numpy() with D > 3, or ensure points have a 'vector' field.")
 
     # === Factory Methods ===
 
@@ -975,3 +1076,36 @@ def _to_list(obj: Any) -> list[Any]:
     if hasattr(obj, "tolist"):
         return obj.tolist()
     return list(obj)
+
+
+# === Projection Helpers ===
+
+
+def _pca(vectors: Any, n_components: int = 3) -> Any:
+    """PCA via SVD (numpy only, no sklearn needed)."""
+    import numpy as np
+
+    x = np.asarray(vectors, dtype=np.float64)
+    x_centered = x - x.mean(axis=0)
+    _u, _s, vt = np.linalg.svd(x_centered, full_matrices=False)
+    return x_centered @ vt[:n_components].T
+
+
+def _tsne(vectors: Any, n_components: int = 3, **kwargs: Any) -> Any:
+    """t-SNE projection (requires scikit-learn)."""
+    try:
+        from sklearn.manifold import TSNE
+    except ImportError:
+        raise ImportError("t-SNE requires scikit-learn: uv add scikit-learn") from None
+    kwargs.setdefault("perplexity", min(30.0, len(vectors) - 1))
+    return TSNE(n_components=n_components, **kwargs).fit_transform(vectors)
+
+
+def _umap(vectors: Any, n_components: int = 3, **kwargs: Any) -> Any:
+    """UMAP projection (requires umap-learn)."""
+    try:
+        from umap import UMAP
+    except ImportError:
+        raise ImportError("UMAP requires umap-learn: uv add umap-learn") from None
+    kwargs.setdefault("n_neighbors", min(15, len(vectors) - 1))
+    return UMAP(n_components=n_components, **kwargs).fit_transform(vectors)
