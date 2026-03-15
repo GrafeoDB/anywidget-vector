@@ -123,6 +123,7 @@ function render({{ model, el }}) {{
   const wrapper = document.createElement("div");
   wrapper.className = "avs-wrapper";
   wrapper.style.width = model.get("width") + "px";
+  wrapper.style.height = model.get("height") + "px";
   el.appendChild(wrapper);
 
   let sidebar = null;
@@ -154,7 +155,6 @@ function render({{ model, el }}) {{
 
   const main = document.createElement("div");
   main.className = "avs-main";
-  main.style.height = model.get("height") + "px";
   wrapper.appendChild(main);
 
   // Sidebar (left, explorer panel)

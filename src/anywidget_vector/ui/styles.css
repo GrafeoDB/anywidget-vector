@@ -273,11 +273,11 @@
   width: 280px;
 }
 
-.avs-panel-left {
+.avs-panel-left.avs-open {
   border-right: 1px solid var(--avs-border);
 }
 
-.avs-panel-right {
+.avs-panel-right.avs-open {
   border-left: 1px solid var(--avs-border);
 }
 
