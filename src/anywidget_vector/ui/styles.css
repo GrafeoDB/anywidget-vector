@@ -1,12 +1,14 @@
 /* === CSS Variables === */
+
+/* Light mode (default) */
 .avs-wrapper {
-  --avs-bg: #1a1a2e;
-  --avs-surface: #252542;
-  --avs-border: #3a3a5c;
-  --avs-text: #e0e0e0;
-  --avs-text-muted: #888;
+  --avs-bg: #ffffff;
+  --avs-surface: #f8f9fa;
+  --avs-border: #e5e7eb;
+  --avs-text: #111827;
+  --avs-text-muted: #6b7280;
   --avs-primary: #6366f1;
-  --avs-primary-hover: #818cf8;
+  --avs-primary-hover: #4f46e5;
   --avs-success: #10b981;
   --avs-warning: #f59e0b;
   --avs-error: #ef4444;
@@ -19,6 +21,17 @@
   position: relative;
   display: flex;
   flex-direction: column;
+}
+
+/* Dark mode */
+.avs-wrapper.avs-dark {
+  --avs-bg: #1a1a2e;
+  --avs-surface: #252542;
+  --avs-border: #3a3a5c;
+  --avs-text: #e0e0e0;
+  --avs-text-muted: #888;
+  --avs-primary: #6366f1;
+  --avs-primary-hover: #818cf8;
 }
 
 /* === Main Layout === */
@@ -541,4 +554,50 @@
   .avs-clickable {
     padding: 10px 16px;
   }
+}
+
+/* === Toggle Switch === */
+.avs-toggle {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  gap: 10px;
+}
+
+.avs-toggle input {
+  display: none;
+}
+
+.avs-toggle-slider {
+  width: 36px;
+  height: 20px;
+  background: var(--avs-border);
+  border-radius: 10px;
+  position: relative;
+  transition: background 0.2s;
+}
+
+.avs-toggle-slider::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  background: #fff;
+  border-radius: 50%;
+  transition: transform 0.2s;
+}
+
+.avs-toggle input:checked + .avs-toggle-slider {
+  background: var(--avs-primary);
+}
+
+.avs-toggle input:checked + .avs-toggle-slider::after {
+  transform: translateX(16px);
+}
+
+.avs-toggle-label {
+  font-size: 13px;
+  color: var(--avs-text);
 }
