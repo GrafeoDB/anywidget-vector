@@ -1,6 +1,6 @@
 [project]
 name = "anywidget-vector"
-version = "0.2.5"
+version = "0.2.6"
 description = "Interactive 3D vector visualization with query UI for vector databases"
 readme = "README.md"
 license = "Apache-2.0"
