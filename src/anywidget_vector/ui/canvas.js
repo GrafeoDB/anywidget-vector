@@ -50,15 +50,19 @@ export function createCanvas(model, container, callbacks) {
     scene = new THREE.Scene();
     scene.background = new THREE.Color(model.get("background"));
 
+    // Use actual container dimensions when available, fall back to model values
+    const initW = container.clientWidth || model.get("width");
+    const initH = container.clientHeight || model.get("height");
+
     // Camera
-    const aspect = model.get("width") / model.get("height");
+    const aspect = initW / initH;
     camera = new THREE.PerspectiveCamera(60, aspect, 0.01, 1000);
     const camPos = model.get("camera_position") || [2, 2, 2];
     camera.position.set(camPos[0], camPos[1], camPos[2]);
 
     // Renderer
     renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-    renderer.setSize(model.get("width"), model.get("height"));
+    renderer.setSize(initW, initH);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     container.appendChild(renderer.domElement);
 
