@@ -461,6 +461,9 @@ export function createCanvas(model, container, callbacks) {
     const distance = size / (2 * Math.tan(Math.PI * camera.fov / 360));
     controls.target.copy(center);
     camera.position.copy(center.clone().add(new THREE.Vector3(0, 0, distance * 1.2)));
+    camera.near = Math.max(0.01, distance * 0.001);
+    camera.far = Math.max(1000, distance * 10);
+    camera.updateProjectionMatrix();
     controls.update();
   }
 
