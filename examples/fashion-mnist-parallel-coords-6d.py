@@ -5,10 +5,10 @@
 #     "polars==1.38.1",
 #     "numpy==2.4.2",
 #     "scikit-learn==1.8.0",
-#     "wigglystuff",
+#     "wigglystuff==0.2.37",
 #     "matplotlib==3.10.8",
 #     "pandas==3.0.1",
-#     "anywidget-vector",
+#     "anywidget-vector==0.2.7",
 # ]
 # ///
 
@@ -97,11 +97,11 @@ def _(
     np,
     pl,
 ):
-    rng = np.random.default_rng(42)
-    idx = rng.choice(len(images), size=n_samples_slider.value, replace=False)
+    _rng = np.random.default_rng(42)
+    idx = _rng.choice(len(images), size=n_samples_slider.value, replace=False)
 
-    pca = PCA(n_components=n_components_slider.value)
-    components = pca.fit_transform(images[idx])
+    _pca = PCA(n_components=n_components_slider.value)
+    components = _pca.fit_transform(images[idx])
 
     df = pl.DataFrame({f"PC{i + 1}": components[:, i] for i in range(n_components_slider.value)}).with_columns(
         pl.Series("label", [label_names[labels[i]] for i in idx])
@@ -139,6 +139,7 @@ def _(
     idx,
     label_names,
     labels,
+    mo,
     shape_dim,
     size_dim,
     x_dim,
@@ -148,44 +149,46 @@ def _(
     def _pc(name):
         return int(name[2:]) - 1
 
-    xi, yi, zi = _pc(x_dim.value), _pc(y_dim.value), _pc(z_dim.value)
+    _xi, _yi, _zi = _pc(x_dim.value), _pc(y_dim.value), _pc(z_dim.value)
+    _color_pc = None if color_dim.value == "label" else _pc(color_dim.value)
+    _size_pc = None if size_dim.value == "none" else _pc(size_dim.value)
+    _unique_labels = sorted(set(label_names.values()))
+    _shape_map = {_n: SHAPE_NAMES[_j % len(SHAPE_NAMES)] for _j, _n in enumerate(_unique_labels)}
 
     vs_points = []
-    for i in range(len(components)):
-        name = label_names[labels[idx[i]]]
-        p = {
-            "id": f"p_{i}",
-            "x": float(components[i, xi]),
-            "y": float(components[i, yi]),
-            "z": float(components[i, zi]),
-            "label": name,
+    for _i in range(len(components)):
+        _name = label_names[labels[idx[_i]]]
+        _p = {
+            "id": f"p_{_i}",
+            "x": float(components[_i, _xi]),
+            "y": float(components[_i, _yi]),
+            "z": float(components[_i, _zi]),
+            "label": _name,
         }
-        if color_dim.value == "label":
-            p["color"] = LABEL_COLORS[name]
+        if _color_pc is None:
+            _p["color"] = LABEL_COLORS[_name]
         else:
-            p["color_val"] = float(components[i, _pc(color_dim.value)])
-        if size_dim.value != "none":
-            p["size_val"] = float(components[i, _pc(size_dim.value)])
+            _p["color_val"] = float(components[_i, _color_pc])
+        if _size_pc is not None:
+            _p["size_val"] = float(components[_i, _size_pc])
         if shape_dim.value == "label":
-            unique = sorted(set(label_names.values()))
-            p["shape_cat"] = name
-            shape_map = {n: SHAPE_NAMES[j % len(SHAPE_NAMES)] for j, n in enumerate(unique)}
-        vs_points.append(p)
+            _p["shape_cat"] = _name
+        vs_points.append(_p)
 
-    vs_kwargs = {
+    _vs_kwargs = {
         "axis_labels": {"x": x_dim.value, "y": y_dim.value, "z": z_dim.value},
     }
-    if color_dim.value != "label":
-        vs_kwargs["color_field"] = "color_val"
-        vs_kwargs["color_scale"] = "viridis"
-    if size_dim.value != "none":
-        vs_kwargs["size_field"] = "size_val"
-        vs_kwargs["size_range"] = [0.01, 0.06]
+    if _color_pc is not None:
+        _vs_kwargs["color_field"] = "color_val"
+        _vs_kwargs["color_scale"] = "viridis"
+    if _size_pc is not None:
+        _vs_kwargs["size_field"] = "size_val"
+        _vs_kwargs["size_range"] = [0.01, 0.06]
     if shape_dim.value == "label":
-        vs_kwargs["shape_field"] = "shape_cat"
-        vs_kwargs["shape_map"] = shape_map
+        _vs_kwargs["shape_field"] = "shape_cat"
+        _vs_kwargs["shape_map"] = _shape_map
 
-    vs = VectorSpace(
+    vs_widget = VectorSpace(
         points=vs_points,
         width=1200,
         height=500,
@@ -194,46 +197,47 @@ def _(
         show_toolbar=True,
         show_settings=True,
         show_properties=False,
-        **vs_kwargs,
+        **_vs_kwargs,
     )
+    vs = mo.ui.anywidget(vs_widget)
     vs
-    return vs, vs_points
+    return vs, vs_points, vs_widget
 
 
 @app.cell
-def _(LABEL_COLORS, color_dim, mo, vs, vs_points, widget):
+def _(LABEL_COLORS, color_dim, mo, vs_points, vs_widget, widget):
     _filtered = set(widget.widget.filtered_indices)
     _dim_color = "#d1d5db"
     _updated = []
-    for i, p in enumerate(vs_points):
-        new_p = dict(p)
-        if i in _filtered:
+    for _i, _p in enumerate(vs_points):
+        _new_p = dict(_p)
+        if _i in _filtered:
             if color_dim.value == "label":
-                new_p["color"] = LABEL_COLORS[p["label"]]
+                _new_p["color"] = LABEL_COLORS[_p["label"]]
             else:
-                new_p.pop("color", None)
+                _new_p.pop("color", None)
         else:
-            new_p["color"] = _dim_color
-        _updated.append(new_p)
-    vs.points = _updated
+            _new_p["color"] = _dim_color
+        _updated.append(_new_p)
+    vs_widget.points = _updated
     mo.md(f"**{len(_filtered)}** / {len(vs_points)} points selected")
     return
 
 
 @app.cell
 def _(idx, images, label_names, labels, np, plt, widget):
-    filtered = widget.widget.filtered_indices
-    sample_idx = np.array(filtered[:10]) if len(filtered) >= 10 else np.array(filtered)
+    _filtered = widget.widget.filtered_indices
+    _sample_idx = np.array(_filtered[:10]) if len(_filtered) >= 10 else np.array(_filtered)
 
-    fig, axes = plt.subplots(1, len(sample_idx), figsize=(2 * len(sample_idx), 2))
-    if len(sample_idx) == 1:
-        axes = [axes]
-    for _ax, _si in zip(axes, sample_idx, strict=False):
+    _fig, _axes = plt.subplots(1, len(_sample_idx), figsize=(2 * len(_sample_idx), 2))
+    if len(_sample_idx) == 1:
+        _axes = [_axes]
+    for _ax, _si in zip(_axes, _sample_idx, strict=False):
         _ax.imshow(images[idx[_si]].reshape(28, 28), cmap="gray")
         _ax.set_title(label_names[labels[idx[_si]]], fontsize=9)
         _ax.axis("off")
     plt.tight_layout()
-    fig
+    _fig
     return
 
 
