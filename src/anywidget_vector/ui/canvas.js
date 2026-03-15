@@ -175,12 +175,20 @@ export function createCanvas(model, container, callbacks) {
     const points = model.get("points") || [];
     if (points.length === 0) return;
 
+    // Auto-scale point sizes relative to data extent
+    const box = new THREE.Box3();
+    points.forEach(p => box.expandByPoint(new THREE.Vector3(p.x ?? 0, p.y ?? 0, p.z ?? 0)));
+    const dataSize = box.getSize(new THREE.Vector3()).length() || 1;
+    const scaleFactor = dataSize / 10;
+    const rawRange = model.get("size_range") || [0.02, 0.06];
+    const sizeRange = [rawRange[0] * scaleFactor, rawRange[1] * scaleFactor];
+
     const opts = {
       colorField: model.get("color_field"),
       colorScale: model.get("color_scale") || "viridis",
       colorDomain: model.get("color_domain"),
       sizeField: model.get("size_field"),
-      sizeRange: model.get("size_range") || [0.02, 0.1],
+      sizeRange: sizeRange,
       shapeField: model.get("shape_field"),
       shapeMap: model.get("shape_map") || {},
     };
@@ -460,7 +468,7 @@ export function createCanvas(model, container, callbacks) {
     const size = box.getSize(new THREE.Vector3()).length();
     const distance = size / (2 * Math.tan(Math.PI * camera.fov / 360));
     controls.target.copy(center);
-    camera.position.copy(center.clone().add(new THREE.Vector3(0, 0, distance * 1.2)));
+    camera.position.copy(center.clone().add(new THREE.Vector3(0, 0, distance * 0.55)));
     camera.near = Math.max(0.01, distance * 0.001);
     camera.far = Math.max(1000, distance * 10);
     camera.updateProjectionMatrix();
@@ -485,8 +493,8 @@ export function createCanvas(model, container, callbacks) {
     zoomOutBtn.innerHTML = ICONS.zoomOut;
     zoomOutBtn.title = "Zoom out";
     zoomOutBtn.addEventListener("click", () => {
-      const dir = camera.position.clone().sub(controls.target).normalize();
-      camera.position.add(dir.multiplyScalar(0.5));
+      const offset = camera.position.clone().sub(controls.target);
+      camera.position.add(offset.multiplyScalar(0.3));
       controls.update();
     });
 

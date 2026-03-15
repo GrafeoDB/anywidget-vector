@@ -54,7 +54,7 @@ class VectorSpace(anywidget.AnyWidget):
 
     # === Size Mapping ===
     size_field = traitlets.Unicode(default_value=None, allow_none=True).tag(sync=True)
-    size_range = traitlets.List(default_value=[0.02, 0.1]).tag(sync=True)
+    size_range = traitlets.List(default_value=[0.02, 0.06]).tag(sync=True)
 
     # === Shape Mapping ===
     shape_field = traitlets.Unicode(default_value=None, allow_none=True).tag(sync=True)

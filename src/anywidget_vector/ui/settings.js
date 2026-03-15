@@ -21,8 +21,9 @@ export function createSettingsPanel(model, callbacks) {
   header.appendChild(closeBtn);
   inner.appendChild(header);
 
-  // Dark mode toggle
+  // Dark mode toggle (hidden when host provides theme)
   const themeGroup = createFormGroup("Theme");
+  themeGroup.classList.add("avs-theme-toggle");
   const toggle = document.createElement("label");
   toggle.className = "avs-toggle";
   const checkbox = document.createElement("input");

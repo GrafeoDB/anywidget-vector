@@ -114,6 +114,22 @@ export function createSidebar(model, callbacks) {
     addStatRow(dimContent, "X range", rangeStr(xs));
     addStatRow(dimContent, "Y range", rangeStr(ys));
     addStatRow(dimContent, "Z range", rangeStr(zs));
+
+    // Visual mapping dimensions
+    const colorField = model.get("color_field");
+    const sizeField = model.get("size_field");
+    const shapeField = model.get("shape_field");
+    if (colorField) addStatRow(dimContent, "Color", colorField);
+    if (sizeField) {
+      const sizeRange = model.get("size_range") || [0.02, 0.1];
+      addStatRow(dimContent, "Size", sizeField + " [" + sizeRange[0] + "," + sizeRange[1] + "]");
+    }
+    if (shapeField) {
+      const shapeMap = model.get("shape_map") || {};
+      const shapes = Object.values(shapeMap);
+      const unique = [...new Set(shapes)];
+      addStatRow(dimContent, "Shape", shapeField + " (" + unique.length + " shapes)");
+    }
   }
 
   function updateClusters() {
@@ -159,6 +175,107 @@ export function createSidebar(model, callbacks) {
     });
   }
 
+  // === Distance Section ===
+  const distSection = document.createElement("div");
+  distSection.className = "avs-sidebar-section";
+
+  const distHeader = document.createElement("div");
+  distHeader.className = "avs-section-header";
+  distHeader.textContent = "Distance";
+  distSection.appendChild(distHeader);
+
+  const distContent = document.createElement("div");
+  distContent.className = "avs-dimension-content";
+
+  // Metric selector
+  const metricGroup = document.createElement("div");
+  metricGroup.className = "avs-form-group";
+  const metricLabel = document.createElement("label");
+  metricLabel.className = "avs-label";
+  metricLabel.textContent = "Metric";
+  metricGroup.appendChild(metricLabel);
+  const metricSelect = document.createElement("select");
+  metricSelect.className = "avs-select";
+  metricSelect.style.width = "100%";
+  ["euclidean", "cosine", "manhattan", "dot_product"].forEach(m => {
+    const opt = document.createElement("option");
+    opt.value = m;
+    opt.textContent = m;
+    opt.selected = m === (model.get("distance_metric") || "euclidean");
+    metricSelect.appendChild(opt);
+  });
+  metricSelect.addEventListener("change", () => {
+    model.set("distance_metric", metricSelect.value);
+    model.save_changes();
+  });
+  metricGroup.appendChild(metricSelect);
+  distContent.appendChild(metricGroup);
+
+  // K neighbors
+  const kGroup = document.createElement("div");
+  kGroup.className = "avs-form-group";
+  const kLabel = document.createElement("label");
+  kLabel.className = "avs-label";
+  kLabel.textContent = "K neighbors";
+  kGroup.appendChild(kLabel);
+  const kInput = document.createElement("input");
+  kInput.type = "number";
+  kInput.className = "avs-input";
+  kInput.min = "0";
+  kInput.max = "50";
+  kInput.value = model.get("k_neighbors") || 0;
+  kInput.addEventListener("input", () => {
+    const k = parseInt(kInput.value, 10) || 0;
+    model.set("k_neighbors", k);
+    model.set("show_connections", k > 0);
+    model.save_changes();
+  });
+  kGroup.appendChild(kInput);
+  distContent.appendChild(kGroup);
+
+  // Distance info (updates when points are selected)
+  const distInfo = document.createElement("div");
+  distInfo.className = "avs-note";
+  distInfo.textContent = "Select a point to see distances";
+  distContent.appendChild(distInfo);
+
+  distSection.appendChild(distContent);
+  inner.appendChild(distSection);
+
+  function updateDistanceInfo() {
+    const selected = model.get("selected_points") || [];
+    if (selected.length === 0) {
+      distInfo.textContent = "Select a point to see distances";
+      return;
+    }
+    const points = model.get("points") || [];
+    const ref = points.find(p => p.id === selected[0]);
+    if (!ref) return;
+
+    const metric = metricSelect.value;
+    const others = points.filter(p => p.id !== ref.id);
+
+    function dist(a, b) {
+      const dx = (a.x ?? 0) - (b.x ?? 0), dy = (a.y ?? 0) - (b.y ?? 0), dz = (a.z ?? 0) - (b.z ?? 0);
+      if (metric === "manhattan") return Math.abs(dx) + Math.abs(dy) + Math.abs(dz);
+      if (metric === "cosine") {
+        const dot = (a.x??0)*(b.x??0) + (a.y??0)*(b.y??0) + (a.z??0)*(b.z??0);
+        const ma = Math.sqrt((a.x??0)**2 + (a.y??0)**2 + (a.z??0)**2);
+        const mb = Math.sqrt((b.x??0)**2 + (b.y??0)**2 + (b.z??0)**2);
+        return (ma === 0 || mb === 0) ? 1 : 1 - dot / (ma * mb);
+      }
+      if (metric === "dot_product") return -((a.x??0)*(b.x??0) + (a.y??0)*(b.y??0) + (a.z??0)*(b.z??0));
+      return Math.sqrt(dx*dx + dy*dy + dz*dz);
+    }
+
+    const sorted = others.map(p => ({ id: p.id, label: p.label || p.id, d: dist(ref, p) }))
+      .sort((a, b) => a.d - b.d).slice(0, 5);
+
+    distInfo.innerHTML = "<strong>" + escapeHtml(ref.label || ref.id) + "</strong><br>" +
+      sorted.map(n => '<span class="avs-property-key">' + escapeHtml(n.label) +
+        '</span> <span class="avs-property-value">' + n.d.toFixed(2) + "</span>").join("<br>");
+  }
+
   // === Event Bindings ===
   model.on("change:points", () => {
     updateDimensions();
@@ -167,6 +284,11 @@ export function createSidebar(model, callbacks) {
   model.on("change:color_field", updateClusters);
   model.on("change:backend_config", updateCollections);
   model.on("change:backend", updateCollections);
+  model.on("change:selected_points", updateDistanceInfo);
+  model.on("change:distance_metric", () => {
+    metricSelect.value = model.get("distance_metric") || "euclidean";
+    updateDistanceInfo();
+  });
 
   // Initial render
   updateCollections();
