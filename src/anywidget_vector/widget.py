@@ -209,6 +209,58 @@ class VectorSpace(anywidget.AnyWidget):
         self.observe(_handler, names=["selected_points"])
         return callback
 
+    # === Add Points ===
+
+    def add_points(self, data: list[dict[str, Any]]) -> VectorSpace:
+        """Append point dicts to the existing points.
+
+        Args:
+            data: List of point dicts with at least x, y keys.
+
+        Returns:
+            Self for chaining.
+        """
+        self.points = [*self.points, *_normalize_points(data)]
+        return self
+
+    def add_numpy(
+        self,
+        positions: Any,
+        *,
+        ids: list[str] | None = None,
+        labels: list[str] | None = None,
+        metadata: dict[str, list[Any]] | None = None,
+    ) -> VectorSpace:
+        """Append points from a NumPy array.
+
+        Args:
+            positions: Array of shape (N, 2) or (N, 3).
+            ids: Optional list of point IDs.
+            labels: Optional list of labels.
+            metadata: Optional dict mapping field names to per-point value lists.
+
+        Returns:
+            Self for chaining.
+        """
+        pos_list = _to_list(positions)
+        offset = len(self.points)
+        new_points = []
+        for i, p in enumerate(pos_list):
+            point: dict[str, Any] = {
+                "id": ids[i] if ids else f"point_{offset + i}",
+                "x": float(p[0]),
+                "y": float(p[1]),
+                "z": float(p[2]) if len(p) > 2 else 0.0,
+            }
+            if labels:
+                point["label"] = labels[i]
+            if metadata:
+                for key, values in metadata.items():
+                    point[key] = values[i]
+            new_points.append(point)
+        self.points = [*self.points, *new_points]
+        return self
+
     # === Factory Methods ===
 
     @classmethod
