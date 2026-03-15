@@ -38,6 +38,9 @@ class VectorSpace(anywidget.AnyWidget):
     height = traitlets.Int(default_value=600).tag(sync=True)
     background = traitlets.Unicode(default_value="#1a1a2e").tag(sync=True)
 
+    # === Theme ===
+    dark_mode = traitlets.Bool(default_value=True).tag(sync=True)
+
     # === Axes and Grid ===
     show_axes = traitlets.Bool(default_value=True).tag(sync=True)
     show_grid = traitlets.Bool(default_value=True).tag(sync=True)

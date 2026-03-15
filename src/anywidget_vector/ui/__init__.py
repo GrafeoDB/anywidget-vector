@@ -122,9 +122,17 @@ async function executeBackendQuery(model) {{
 function render({{ model, el }}) {{
   const wrapper = document.createElement("div");
   wrapper.className = "avs-wrapper";
+  if (model.get("dark_mode")) wrapper.classList.add("avs-dark");
   wrapper.style.width = model.get("width") + "px";
   wrapper.style.height = model.get("height") + "px";
   el.appendChild(wrapper);
+
+  model.on("change:dark_mode", () => {{
+    const dark = model.get("dark_mode");
+    wrapper.classList.toggle("avs-dark", dark);
+    model.set("background", dark ? "#1a1a2e" : "#fafafa");
+    model.save_changes();
+  }});
 
   let sidebar = null;
   let settingsPanel = null;

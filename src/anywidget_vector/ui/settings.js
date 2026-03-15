@@ -21,6 +21,31 @@ export function createSettingsPanel(model, callbacks) {
   header.appendChild(closeBtn);
   inner.appendChild(header);
 
+  // Dark mode toggle
+  const themeGroup = createFormGroup("Theme");
+  const toggle = document.createElement("label");
+  toggle.className = "avs-toggle";
+  const checkbox = document.createElement("input");
+  checkbox.type = "checkbox";
+  checkbox.checked = model.get("dark_mode");
+  checkbox.addEventListener("change", (e) => {
+    model.set("dark_mode", e.target.checked);
+    model.save_changes();
+  });
+  model.on("change:dark_mode", () => {
+    checkbox.checked = model.get("dark_mode");
+  });
+  const slider = document.createElement("span");
+  slider.className = "avs-toggle-slider";
+  const toggleLabel = document.createElement("span");
+  toggleLabel.className = "avs-toggle-label";
+  toggleLabel.textContent = "Dark mode";
+  toggle.appendChild(checkbox);
+  toggle.appendChild(slider);
+  toggle.appendChild(toggleLabel);
+  themeGroup.appendChild(toggle);
+  inner.appendChild(themeGroup);
+
   // Backend selector
   const backendGroup = createFormGroup("Backend");
   const backendSelect = document.createElement("select");
