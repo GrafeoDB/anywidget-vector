@@ -122,16 +122,47 @@ async function executeBackendQuery(model) {{
 function render({{ model, el }}) {{
   const wrapper = document.createElement("div");
   wrapper.className = "avs-wrapper";
-  if (model.get("dark_mode")) wrapper.classList.add("avs-dark");
   wrapper.style.width = model.get("width") + "px";
   wrapper.style.height = model.get("height") + "px";
   el.appendChild(wrapper);
 
-  model.on("change:dark_mode", () => {{
-    const dark = model.get("dark_mode");
+  // Auto-detect host theme (marimo uses Tailwind class="dark" on <html>)
+  function detectHostDark() {{
+    const html = document.documentElement;
+    if (html.classList.contains("dark")) return true;
+    if (html.dataset.theme === "dark") return true;
+    if (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) return true;
+    return false;
+  }}
+
+  function applyTheme(dark) {{
     wrapper.classList.toggle("avs-dark", dark);
-    model.set("background", dark ? "#1a1a2e" : "#fafafa");
+    model.set("background", dark ? "#181c1a" : "#ffffff");
     model.save_changes();
+  }}
+
+  // Detect if we're inside a themed host (marimo, jupyter, etc.)
+  const hasHostTheme = !!el.getRootNode()?.host?.tagName?.startsWith("MARIMO-");
+  if (hasHostTheme) {{
+    wrapper.classList.add("avs-auto-theme");
+    model.set("dark_mode", detectHostDark());
+    applyTheme(detectHostDark());
+    // Watch host for live theme changes
+    const themeObserver = new MutationObserver(() => {{
+      const dark = detectHostDark();
+      if (model.get("dark_mode") !== dark) {{
+        model.set("dark_mode", dark);
+        applyTheme(dark);
+      }}
+    }});
+    themeObserver.observe(document.documentElement, {{ attributes: true, attributeFilter: ["class", "data-theme"] }});
+  }} else {{
+    applyTheme(model.get("dark_mode"));
+  }}
+
+  // Manual toggle from settings panel still works
+  model.on("change:dark_mode", () => {{
+    applyTheme(model.get("dark_mode"));
   }});
 
   let sidebar = null;
