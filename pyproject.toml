@@ -1,6 +1,6 @@
 [project]
 name = "anywidget-vector"
-version = "0.2.8"
+version = "0.3.0"
 description = "Interactive 3D vector visualization with query UI for vector databases"
 readme = "README.md"
 license = "Apache-2.0"
@@ -26,10 +26,10 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-    "prek>=0.3.2",
+    "prek>=0.3",
     "pytest>=9.0.2",
     "ruff>=0.15",
-    "ty>=0.0.20",
+    "ty>=0.0",
     "marimo>=0.20",
 ]
 pandas = ["pandas>=2.0"]

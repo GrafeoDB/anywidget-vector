@@ -67,18 +67,9 @@ def _(fetch_openml, np):
         8: "Bag",
         9: "Ankle boot",
     }
-    LABEL_COLORS = {
-        "T-shirt/top": "#6366f1",
-        "Trouser": "#f59e0b",
-        "Pullover": "#10b981",
-        "Dress": "#ef4444",
-        "Coat": "#8b5cf6",
-        "Sandal": "#06b6d4",
-        "Shirt": "#f97316",
-        "Sneaker": "#84cc16",
-        "Bag": "#ec4899",
-        "Ankle boot": "#14b8a6",
-    }
+    # d3 schemeCategory10, assigned alphabetically to match wigglystuff
+    _d3 = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf"]
+    LABEL_COLORS = {_name: _d3[_i] for _i, _name in enumerate(sorted(label_names.values()))}
     SHAPE_NAMES = ["sphere", "cube", "cone", "octahedron", "cylinder", "tetrahedron"]
     return LABEL_COLORS, SHAPE_NAMES, images, label_names, labels
 
@@ -115,8 +106,8 @@ def _(
 
 
 @app.cell
-def _(ParallelCoordinates, df, mo):
-    widget = mo.ui.anywidget(ParallelCoordinates(df, color_by="label"))
+def _(LABEL_COLORS, ParallelCoordinates, df, mo):
+    widget = mo.ui.anywidget(ParallelCoordinates(df, color_by="label", color_map=LABEL_COLORS))
     widget
     return (widget,)
 

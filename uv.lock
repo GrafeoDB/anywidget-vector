@@ -50,7 +50,7 @@ wheels = [
 
 [[package]]
 name = "anywidget-vector"
-version = "0.2.8"
+version = "0.3.0"
 source = { editable = "." }
 dependencies = [
     { name = "anywidget" },
@@ -123,13 +123,13 @@ requires-dist = [
     { name = "pandas", marker = "extra == 'pandas'", specifier = ">=2.0" },
     { name = "pinecone-client", marker = "extra == 'all'", specifier = ">=6.0" },
     { name = "pinecone-client", marker = "extra == 'pinecone'", specifier = ">=3.0" },
-    { name = "prek", marker = "extra == 'dev'", specifier = ">=0.3.2" },
+    { name = "prek", marker = "extra == 'dev'", specifier = ">=0.3" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=9.0.2" },
     { name = "qdrant-client", marker = "extra == 'all'", specifier = ">=1" },
     { name = "qdrant-client", marker = "extra == 'qdrant'", specifier = ">=1.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.15" },
     { name = "scikit-learn", marker = "extra == 'projection'", specifier = ">=1.3" },
-    { name = "ty", marker = "extra == 'dev'", specifier = ">=0.0.20" },
+    { name = "ty", marker = "extra == 'dev'", specifier = ">=0.0" },
     { name = "umap-learn", marker = "extra == 'projection'", specifier = ">=0.5" },
     { name = "weaviate-client", marker = "extra == 'all'", specifier = ">=4.20" },
     { name = "weaviate-client", marker = "extra == 'weaviate'", specifier = ">=4.0" },
