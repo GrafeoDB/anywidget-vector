@@ -258,13 +258,11 @@ def _(LABEL_COLORS, idx, images, label_names, labels, np, plt, vs, widget):
     _selected_ids = set(vs.widget.selected_points or [])
     _filtered = widget.widget.filtered_indices
 
-    if _selected_ids:
-        _show = [
-            _i for _i in range(len(idx))
-            if f"p_{_i}" in _selected_ids
-        ][:10]
-    else:
-        _show = list(_filtered[:10])
+    _show = (
+        [_i for _i in range(len(idx)) if f"p_{_i}" in _selected_ids][:10]
+        if _selected_ids
+        else list(_filtered[:10])
+    )
 
     _sample_idx = np.array(_show) if len(_show) > 0 else np.array([0])
 
