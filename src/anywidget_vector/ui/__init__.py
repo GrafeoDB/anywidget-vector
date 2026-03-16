@@ -122,8 +122,16 @@ async function executeBackendQuery(model) {{
 function render({{ model, el }}) {{
   const wrapper = document.createElement("div");
   wrapper.className = "avs-wrapper";
-  wrapper.style.width = model.get("width") + "px";
-  wrapper.style.height = model.get("height") + "px";
+
+  const _w = model.get("width");
+  const _h = model.get("height");
+  wrapper.style.width = _w > 0 ? _w + "px" : "100%";
+  if (_h > 0) {{
+    wrapper.style.height = _h + "px";
+  }} else {{
+    wrapper.style.aspectRatio = "1 / 1";
+  }}
+
   el.appendChild(wrapper);
 
   // Auto-detect host theme (marimo uses Tailwind class="dark" on <html>)
@@ -175,7 +183,7 @@ function render({{ model, el }}) {{
       onRunQuery: () => runQuery(),
       onFilterInput: (text) => {{
         if (canvas) {{
-          const result = canvas.applyFilter(text);
+          const result = canvas.applyFilter(text, false);
           if (toolbarUI) toolbarUI.setFilterCount(result.matched, result.total);
         }}
       }},
@@ -215,21 +223,22 @@ function render({{ model, el }}) {{
     main.appendChild(settingsPanel.element);
   }}
 
-  if (model.get("show_properties")) {{
-    propertiesPanel = createPropertiesPanel(model, {{
-      onClose: () => propertiesPanel?.close(),
-    }});
-    main.appendChild(propertiesPanel.element);
-  }}
+  propertiesPanel = createPropertiesPanel(model, {{
+    onClose: () => propertiesPanel?.close(),
+  }});
+  main.appendChild(propertiesPanel.element);
+  if (model.get("show_properties")) propertiesPanel.open();
 
-  const canvas = createCanvas(model, canvasContainer, {{}});
+  const canvas = createCanvas(model, canvasContainer, {{
+    onHover: (point) => propertiesPanel?.setHoveredPoint(point),
+  }});
 
   async function runQuery() {{
     const query = model.get("query_input") || "";
 
-    // Always apply client-side filter
+    // Apply hard client-side filter (completely hide non-matching)
     if (canvas) {{
-      const result = canvas.applyFilter(query);
+      const result = canvas.applyFilter(query, true);
       if (toolbarUI) toolbarUI.setFilterCount(result.matched, result.total);
     }}
 

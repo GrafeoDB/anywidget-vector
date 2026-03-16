@@ -13,13 +13,13 @@
 #     "wigglystuff==0.2.37",
 #     "matplotlib==3.10.8",
 #     "pandas==3.0.1",
-#     "anywidget-vector==0.2.7",
+#     "anywidget-vector==0.3.1",
 # ]
 # ///
 
 import marimo
 
-__generated_with = "0.19.7"
+__generated_with = "0.20.2"
 app = marimo.App(width="full")
 
 
@@ -34,7 +34,6 @@ def _():
     from wigglystuff import ParallelCoordinates
 
     from anywidget_vector import VectorSpace
-
     return PCA, ParallelCoordinates, VectorSpace, fetch_openml, mo, np, pl, plt
 
 
@@ -43,7 +42,7 @@ def _(mo):
     mo.md(r"""
     # Fashion MNIST: Parallel Coordinates + 6D Vector View
 
-    Brush the parallel coordinates axes to filter. The 3D scatter updates in real time.
+    Brush the parallel coordinates axes to filter. The 3D (xyz)+3D(color/size/shape) scatter updates in real time.
     Use the dropdowns to map PCA dimensions to visual channels.
     """)
     return
@@ -77,7 +76,7 @@ def _(fetch_openml, np):
 @app.cell
 def _(mo):
     n_samples_slider = mo.ui.slider(start=500, stop=5000, step=500, value=2000, label="Samples")
-    n_components_slider = mo.ui.slider(start=3, stop=15, step=1, value=8, label="PCA dims")
+    n_components_slider = mo.ui.slider(start=3, stop=15, step=1, value=5, label="PCA dims")
     mo.hstack([n_samples_slider, n_components_slider])
     return n_components_slider, n_samples_slider
 
@@ -204,8 +203,7 @@ def _(
 
     vs_widget = VectorSpace(
         points=vs_points,
-        width=1600,
-        height=500,
+        height=900,
         show_toolbar=True,
         show_settings=True,
         show_properties=False,
@@ -213,36 +211,62 @@ def _(
     )
     vs = mo.ui.anywidget(vs_widget)
     vs
-    return vs_points, vs_widget
+    return vs, vs_points, vs_widget
 
 
 @app.cell
 def _(LABEL_COLORS, color_dim, mo, vs_points, vs_widget, widget):
-    _filtered = set(widget.widget.filtered_indices)
-    _dim_color = "#d1d5db"
+    # ParallelCoordinates -> VectorSpace (one-way)
+    # Uses vs_widget (raw) to avoid triggering vs-dependent cells
+    _par_selected = list(widget.widget.selected_indices or [])
+    _par_filtered = set(widget.widget.filtered_indices)
+    _active_set = set(_par_selected) if _par_selected else _par_filtered
     _updated = []
     for _i, _p in enumerate(vs_points):
+        if _i not in _active_set:
+            continue
         _new_p = dict(_p)
-        if _i in _filtered:
-            if color_dim.value == "label":
-                _new_p["color"] = LABEL_COLORS[_p["label"]]
-            else:
-                _new_p.pop("color", None)
+        if color_dim.value == "label":
+            _new_p["color"] = LABEL_COLORS[_p["label"]]
         else:
-            _new_p["color"] = _dim_color
+            _new_p.pop("color", None)
         _updated.append(_new_p)
     vs_widget.points = _updated
-    mo.md(f"**{len(_filtered)}** / {len(vs_points)} points selected")
+    mo.md(f"**{len(_updated)}** / {len(vs_points)} points selected")
     return
 
 
 @app.cell
-def _(LABEL_COLORS, idx, images, label_names, labels, np, plt, vs_widget, widget):
-    _filtered = widget.widget.filtered_indices
-    _sample_idx = np.array(_filtered[:10]) if len(_filtered) >= 10 else np.array(_filtered)
+def _(LABEL_COLORS, ParallelCoordinates, df, mo, vs):
+    # VectorSpace -> filtered ParallelCoordinates (reactive via vs.value)
+    _selected = list(vs.widget.selected_points or [])
+    if _selected:
+        _indices = sorted(int(sid.split("_")[1]) for sid in _selected)
+        _filtered_df = df[_indices]
+        _par = ParallelCoordinates(_filtered_df, color_by="label", color_map=LABEL_COLORS)
+        mo.vstack([
+            mo.md(f"**{len(_indices)}** points selected in 3D view"),
+            mo.ui.anywidget(_par),
+        ])
+    else:
+        mo.md("*Lasso or box-select points in the 3D view to filter*")
+    return
 
-    # Which points are selected in the 3D view?
-    _selected_ids = set(vs_widget.selected_points or [])
+
+@app.cell
+def _(LABEL_COLORS, idx, images, label_names, labels, np, plt, vs, widget):
+    _selected_ids = set(vs.widget.selected_points or [])
+    _filtered = widget.widget.filtered_indices
+
+    if _selected_ids:
+        _show = [
+            _i for _i in range(len(idx))
+            if f"p_{_i}" in _selected_ids
+        ][:10]
+    else:
+        _show = list(_filtered[:10])
+
+    _sample_idx = np.array(_show) if len(_show) > 0 else np.array([0])
 
     _fig, _axes = plt.subplots(1, len(_sample_idx), figsize=(2 * len(_sample_idx), 2.4))
     if len(_sample_idx) == 1:
@@ -252,7 +276,6 @@ def _(LABEL_COLORS, idx, images, label_names, labels, np, plt, vs_widget, widget
         _ax.imshow(images[idx[_si]].reshape(28, 28), cmap="gray")
         _ax.set_title(_name, fontsize=9)
         _ax.axis("off")
-        # Highlight if selected in 3D view
         if f"p_{_si}" in _selected_ids:
             _color = LABEL_COLORS.get(_name, "#0880ea")
             for _spine in _ax.spines.values():

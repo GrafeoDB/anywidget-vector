@@ -46,23 +46,20 @@ export function createPropertiesPanel(model, callbacks) {
     }
   });
 
-  // Update on hover
-  model.on("change:hovered_point", () => {
-    const hovered = model.get("hovered_point");
-    const selectedIds = model.get("selected_points") || [];
-    if (hovered && selectedIds.length === 0) {
-      showPointProperties(content, hovered, true);
-    } else if (selectedIds.length === 0) {
-      showEmpty(content);
-    }
-  });
-
   return {
     element: panel,
     open: () => panel.classList.add("avs-open"),
     close: () => panel.classList.remove("avs-open"),
     toggle: () => panel.classList.toggle("avs-open"),
     isOpen: () => panel.classList.contains("avs-open"),
+    setHoveredPoint: (point) => {
+      const selectedIds = model.get("selected_points") || [];
+      if (point && selectedIds.length === 0) {
+        showPointProperties(content, point, true);
+      } else if (!point && selectedIds.length === 0) {
+        showEmpty(content);
+      }
+    },
   };
 }
 

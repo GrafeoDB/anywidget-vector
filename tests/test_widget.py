@@ -12,8 +12,8 @@ class TestVectorSpaceInit:
         """Test empty initialization."""
         widget = VectorSpace()
         assert widget.points == []
-        assert widget.width == 800
-        assert widget.height == 600
+        assert widget.width == 0
+        assert widget.height == 0
 
     def test_with_points(self):
         """Test initialization with points."""

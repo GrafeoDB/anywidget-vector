@@ -34,8 +34,9 @@ class VectorSpace(anywidget.AnyWidget):
     points = traitlets.List(trait=traitlets.Dict()).tag(sync=True)
 
     # === Display ===
-    width = traitlets.Int(default_value=800).tag(sync=True)
-    height = traitlets.Int(default_value=600).tag(sync=True)
+    # width=0 means "auto" (fill container). height=0 means "match width" (1:1 ratio).
+    width = traitlets.Int(default_value=0).tag(sync=True)
+    height = traitlets.Int(default_value=0).tag(sync=True)
     background = traitlets.Unicode(default_value="#1a1a2e").tag(sync=True)
 
     # === Theme ===
@@ -66,8 +67,11 @@ class VectorSpace(anywidget.AnyWidget):
 
     # === Interaction ===
     selected_points = traitlets.List(default_value=[]).tag(sync=True)
+    _selection_version = traitlets.Int(default_value=0).tag(sync=True)
     hovered_point = traitlets.Dict(default_value=None, allow_none=True).tag(sync=True)
-    selection_mode = traitlets.CaselessStrEnum(values=["click", "multi", "box"], default_value="click").tag(sync=True)
+    selection_mode = traitlets.CaselessStrEnum(values=["click", "multi", "box", "lasso"], default_value="click").tag(
+        sync=True
+    )
 
     # === Tooltip ===
     show_tooltip = traitlets.Bool(default_value=True).tag(sync=True)
