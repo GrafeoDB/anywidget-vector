@@ -40,7 +40,7 @@
 
 ### New Features
 
-- **Distance metrics sidebar**: Distance section with metric selector (euclidean, cosine, manhattan, dot product), configurable k-neighbors (0-50), and live nearest-neighbor display for the selected point
+- **Distance metrics sidebar**: Distance section with metric selector (euclidean, cosine, manhattan, dot product), configurable k-neighbors (0-50) and live nearest-neighbor display for the selected point
 - **Dimension mapping display**: Sidebar now shows active visual mapping fields: color field, size range, shape field and unique shape count
 
 ### Improvements
@@ -51,7 +51,7 @@
 
 ### New Features
 
-- **6D parallel coordinates example**: Fashion-MNIST demo with PCA across 6+ dimensions, interactive axis mapping, and shape mapping to categorical labels
+- **6D parallel coordinates example**: Fashion-MNIST demo with PCA across 6+ dimensions, interactive axis mapping and shape mapping to categorical labels
 
 ## 0.2.7 (2026-03-15)
 
