@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.3.2 (2026-03-16)
+
+### Improvements
+
+- **Marimo reactivity fix**: Removed camera and hover JS-to-Python sync to prevent continuous cell re-execution. Only user-initiated actions (selection, mode change) now trigger marimo reactive updates
+- **Custom scroll zoom**: Replaced OrbitControls zoom with a custom wheel handler for much finer granularity
+- **Selection hides completely**: Lasso/box selection now fully hides non-selected points (scale-to-zero for instanced meshes) instead of dimming
+- **Auto zoom-to-fit on selection**: Camera automatically frames the selected points after lasso/box selection
+- **Search filter modes**: Typing in the search bar dims non-matching points as a preview, pressing Run/Enter hides them completely
+- **Hover via callback**: Properties panel hover now uses a direct JS callback instead of model sync, eliminating unnecessary Python round-trips
+
+### Bug Fixes
+
+- **setSelection scoping**: Moved `setSelection` helper to `createCanvas` scope so lasso/box/click handlers can access it
+- **Camera debounce variable**: Fixed `_cameraDebounce` lexical declaration error by moving it to the correct scope
+
 ## 0.3.1 (2026-03-16)
 
 ### New Features
