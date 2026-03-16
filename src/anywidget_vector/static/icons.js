@@ -16,4 +16,5 @@ export const ICONS = {
   zoomFit: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>',
   cursor: '<svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M4 2l12 14h-5l-2.3 5.5L6 20.3 8.3 15H4V2z"/></svg>',
   boxSelect: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-dasharray="3 2"><rect x="3" y="3" width="18" height="18" rx="1"/></svg>',
+  lasso: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="10" rx="9" ry="7"/><path d="M12 17v3M12 20l-2 2"/></svg>',
 };

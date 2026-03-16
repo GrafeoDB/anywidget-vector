@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.3.1 (2026-03-16)
+
+### New Features
+
+- **Lasso selection**: New lasso mode for freehand point selection in the 3D canvas, with point-in-polygon hit testing
+- **Selection highlighting**: Selected points show wireframe highlight rings and non-selected points are dimmed to 15% brightness
+- **Auto-sizing**: Width defaults to 100% (fill container), height defaults to 1:1 aspect ratio. Both can still be set to fixed pixel values
+
+### Bug Fixes
+
+- **Properties panel**: Panel is now always created (previously skipped when `show_properties=False`), so the toolbar button always works. Starts closed unless `show_properties=True`
+- **Distance metric feedback**: Changing the metric now auto-enables k=5 connections when a point is selected, giving immediate visual feedback
+
+### Improvements
+
+- Reduced scroll zoom sensitivity (`zoomSpeed` halved to 0.5)
+- Search filter dimming increased from 12% to 6% opacity for clearer visual contrast
+- Camera no longer resets on every point update (only on initial load)
+- Cross-widget filtering: example updated so VectorSpace lasso selection feeds back into ParallelCoordinates dimming via marimo reactivity
+
 ## 0.3.0 (2026-03-16)
 
 ### New Features

@@ -40,7 +40,16 @@ export function createCanvas(model, container, callbacks) {
   let animationId;
   let resizeObserver;
   let selectionRect, boxOverlay;
+  let selectionGroup;
+  let lassoOverlayEl, lassoSvg, lassoPathEl;
+  let isLassoing = false, lassoCoords = [];
   let currentMode = model.get("selection_mode") || "click";
+
+  function setSelection(ids) {
+    model.set("selected_points", ids);
+    model.set("_selection_version", (model.get("_selection_version") || 0) + 1);
+    model.save_changes();
+  }
 
   init();
   animate();
@@ -80,10 +89,21 @@ export function createCanvas(model, container, callbacks) {
     // Controls
     controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
-    controls.dampingFactor = 0.05;
+    controls.dampingFactor = 0.08;
+    controls.zoomSpeed = 0.3;
+    controls.enableZoom = false; // disable built-in scroll zoom
     const target = model.get("camera_target") || [0, 0, 0];
     controls.target.set(target[0], target[1], target[2]);
-    controls.addEventListener("change", onCameraChange);
+
+    // Custom smooth scroll zoom with reduced sensitivity
+    renderer.domElement.addEventListener("wheel", (e) => {
+      e.preventDefault();
+      const factor = 1 + e.deltaY * 0.0003;
+      const offset = camera.position.clone().sub(controls.target);
+      offset.multiplyScalar(factor);
+      camera.position.copy(controls.target).add(offset);
+      controls.update();
+    }, { passive: false });
 
     // Lighting
     scene.add(new THREE.AmbientLight(0xffffff, 0.6));
@@ -96,6 +116,8 @@ export function createCanvas(model, container, callbacks) {
     scene.add(pointsGroup);
     connectionsGroup = new THREE.Group();
     scene.add(connectionsGroup);
+    selectionGroup = new THREE.Group();
+    scene.add(selectionGroup);
     axesGroup = new THREE.Group();
     scene.add(axesGroup);
 
@@ -105,6 +127,7 @@ export function createCanvas(model, container, callbacks) {
     setupTooltip();
     setupZoomControls();
     setupBoxSelection();
+    setupLassoSelection();
     setupKeyboardShortcuts();
     createPoints();
     createConnections();
@@ -123,9 +146,9 @@ export function createCanvas(model, container, callbacks) {
         e.preventDefault();
         fitToView();
       } else if (e.key === "Escape") {
-        model.set("selected_points", []);
-        model.set("hovered_point", null);
-        model.save_changes();
+        hoveredObject = null;
+        hideTooltip();
+        setSelection([]);
       }
     });
   }
@@ -402,14 +425,12 @@ export function createCanvas(model, container, callbacks) {
       const point = points[pointIndex];
       if (point && (!hoveredObject || hoveredObject.pointId !== pointId)) {
         hoveredObject = { pointIndex, pointId };
-        model.set("hovered_point", point);
-        model.save_changes();
+        callbacks.onHover?.(point);
         showTooltip(event, point);
       }
     } else if (hoveredObject) {
       hoveredObject = null;
-      model.set("hovered_point", null);
-      model.save_changes();
+      callbacks.onHover?.(null);
       hideTooltip();
     }
   }
@@ -438,18 +459,16 @@ export function createCanvas(model, container, callbacks) {
       const currentSelection = model.get("selected_points") || [];
 
       if (selectionMode === "click") {
-        model.set("selected_points", [pointId]);
+        setSelection([pointId]);
       } else if (selectionMode === "multi") {
         if (currentSelection.includes(pointId)) {
-          model.set("selected_points", currentSelection.filter(id => id !== pointId));
+          setSelection(currentSelection.filter(id => id !== pointId));
         } else {
-          model.set("selected_points", [...currentSelection, pointId]);
+          setSelection([...currentSelection, pointId]);
         }
       }
-      model.save_changes();
     } else {
-      model.set("selected_points", []);
-      model.save_changes();
+      setSelection([]);
     }
   }
 
@@ -518,25 +537,28 @@ export function createCanvas(model, container, callbacks) {
     boxBtn.innerHTML = ICONS.boxSelect;
     boxBtn.title = "Box select mode";
 
+    const lassoBtn = document.createElement("button");
+    lassoBtn.className = "avs-zoom-btn avs-mode-btn";
+    lassoBtn.innerHTML = ICONS.lasso;
+    lassoBtn.title = "Lasso select mode";
+
     function setActiveMode(mode) {
       currentMode = mode;
-      model.set("selection_mode", mode === "box" ? "box" : "click");
+      model.set("selection_mode", mode);
       model.save_changes();
 
-      clickBtn.classList.toggle("avs-mode-active", mode !== "box");
+      clickBtn.classList.toggle("avs-mode-active", mode === "click");
       boxBtn.classList.toggle("avs-mode-active", mode === "box");
+      lassoBtn.classList.toggle("avs-mode-active", mode === "lasso");
 
-      // Toggle orbit controls: disabled in box mode so drag draws the rectangle
-      controls.enabled = (mode !== "box");
-
-      // Show/hide box overlay
-      if (boxOverlay) {
-        boxOverlay.style.display = (mode === "box") ? "block" : "none";
-      }
+      controls.enabled = (mode === "click");
+      if (boxOverlay) boxOverlay.style.display = (mode === "box") ? "block" : "none";
+      if (lassoOverlayEl) lassoOverlayEl.style.display = (mode === "lasso") ? "block" : "none";
     }
 
     clickBtn.addEventListener("click", () => setActiveMode("click"));
     boxBtn.addEventListener("click", () => setActiveMode("box"));
+    lassoBtn.addEventListener("click", () => setActiveMode("lasso"));
 
     // Sync with model changes from Python side
     model.on("change:selection_mode", () => {
@@ -546,6 +568,7 @@ export function createCanvas(model, container, callbacks) {
 
     modeGroup.appendChild(clickBtn);
     modeGroup.appendChild(boxBtn);
+    modeGroup.appendChild(lassoBtn);
 
     zoomControls.appendChild(modeGroup);
     zoomControls.appendChild(zoomInBtn);
@@ -619,8 +642,7 @@ export function createCanvas(model, container, callbacks) {
         { x1, y1, x2, y2 },
         rect.width, rect.height
       );
-      model.set("selected_points", selectedIds);
-      model.save_changes();
+      setSelection(selectedIds);
     });
   }
 
@@ -659,14 +681,8 @@ export function createCanvas(model, container, callbacks) {
     tooltip.style.display = "none";
   }
 
-  function onCameraChange() {
-    model.set("camera_position", [camera.position.x, camera.position.y, camera.position.z]);
-    model.set("camera_target", [controls.target.x, controls.target.y, controls.target.z]);
-    model.save_changes();
-  }
-
   function bindModelEvents() {
-    model.on("change:points", () => { createPoints(); createConnections(); fitToView(); });
+    model.on("change:points", () => { createPoints(); createConnections(); updateSelectionHighlight(); });
     model.on("change:background", () => { scene.background = new THREE.Color(model.get("background")); });
     model.on("change:show_axes", setupAxesAndGrid);
     model.on("change:show_grid", setupAxesAndGrid);
@@ -684,6 +700,7 @@ export function createCanvas(model, container, callbacks) {
     model.on("change:distance_metric", createConnections);
     model.on("change:connection_color", createConnections);
     model.on("change:connection_opacity", createConnections);
+    model.on("change:selected_points", updateSelectionHighlight);
     model.on("change:camera_position", () => {
       const pos = model.get("camera_position");
       if (pos) camera.position.set(pos[0], pos[1], pos[2]);
@@ -714,32 +731,43 @@ export function createCanvas(model, container, callbacks) {
     });
   }
 
-  function applyFilter(filterText) {
+  function applyFilter(filterText, hard) {
     const points = model.get("points") || [];
     const filter = (filterText || "").toLowerCase().trim();
     const total = points.length;
 
     if (!filter) {
-      // Reset all to full opacity
+      // Reset all to visible
       pointsGroup.children.forEach(obj => {
         if (obj.userData.isInstanced) {
-          // Restore original colors from stored data
+          if (obj.userData._filterOrigMatrices) {
+            const m = new THREE.Matrix4();
+            for (let i = 0; i < obj.userData.pointIndices.length; i++) {
+              m.fromArray(obj.userData._filterOrigMatrices, i * 16);
+              obj.setMatrixAt(i, m);
+            }
+            obj.instanceMatrix.needsUpdate = true;
+            obj.userData._filterOrigMatrices = null;
+          }
           if (obj.userData._originalColors) {
             const attr = obj.geometry.getAttribute("color");
             attr.array.set(obj.userData._originalColors);
             attr.needsUpdate = true;
+            obj.userData._originalColors = null;
           }
-        } else if (obj.material) {
-          obj.material.opacity = 1;
-          obj.material.transparent = false;
-          obj.material.needsUpdate = true;
+        } else {
+          obj.visible = true;
+          if (obj.material) {
+            obj.material.opacity = 1;
+            obj.material.transparent = false;
+            obj.material.needsUpdate = true;
+          }
         }
       });
       return { matched: total, total };
     }
 
     let matched = 0;
-    // Build match set from points data
     const matchSet = new Set();
     points.forEach((point, idx) => {
       if (pointMatchesFilter(point, filter)) {
@@ -748,32 +776,219 @@ export function createCanvas(model, container, callbacks) {
       }
     });
 
+    if (hard) {
+      // Hard filter: completely hide non-matching
+      const zeroMatrix = new THREE.Matrix4().makeScale(0, 0, 0);
+      pointsGroup.children.forEach(obj => {
+        if (obj.userData.isInstanced) {
+          const indices = obj.userData.pointIndices;
+          if (!obj.userData._filterOrigMatrices) {
+            const buf = new Float32Array(indices.length * 16);
+            const m = new THREE.Matrix4();
+            for (let i = 0; i < indices.length; i++) {
+              obj.getMatrixAt(i, m);
+              m.toArray(buf, i * 16);
+            }
+            obj.userData._filterOrigMatrices = buf;
+          }
+          const m = new THREE.Matrix4();
+          for (let i = 0; i < indices.length; i++) {
+            if (matchSet.has(indices[i])) {
+              m.fromArray(obj.userData._filterOrigMatrices, i * 16);
+            } else {
+              m.copy(zeroMatrix);
+            }
+            obj.setMatrixAt(i, m);
+          }
+          obj.instanceMatrix.needsUpdate = true;
+        } else {
+          obj.visible = matchSet.has(obj.userData.pointIndex);
+        }
+      });
+    } else {
+      // Soft filter: dim non-matching
+      pointsGroup.children.forEach(obj => {
+        if (obj.userData.isInstanced) {
+          const indices = obj.userData.pointIndices;
+          const attr = obj.geometry.getAttribute("color");
+          if (!obj.userData._originalColors) {
+            obj.userData._originalColors = new Float32Array(attr.array);
+          }
+          for (let i = 0; i < indices.length; i++) {
+            const dim = matchSet.has(indices[i]) ? 1.0 : 0.08;
+            attr.array[i * 3] = obj.userData._originalColors[i * 3] * dim;
+            attr.array[i * 3 + 1] = obj.userData._originalColors[i * 3 + 1] * dim;
+            attr.array[i * 3 + 2] = obj.userData._originalColors[i * 3 + 2] * dim;
+          }
+          attr.needsUpdate = true;
+        } else if (obj.material) {
+          const matches = matchSet.has(obj.userData.pointIndex);
+          obj.material.transparent = !matches;
+          obj.material.opacity = matches ? 1.0 : 0.08;
+          obj.material.needsUpdate = true;
+        }
+      });
+    }
+
+    return { matched, total };
+  }
+
+  function setupLassoSelection() {
+    // SVG overlay for drawing the lasso path
+    lassoSvg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    lassoSvg.style.cssText = "position:absolute;top:0;left:0;width:100%;height:100%;z-index:16;display:none;pointer-events:none;";
+    container.appendChild(lassoSvg);
+
+    lassoPathEl = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
+    lassoPathEl.setAttribute("fill", "rgba(99, 102, 241, 0.1)");
+    lassoPathEl.setAttribute("stroke", "#6366f1");
+    lassoPathEl.setAttribute("stroke-width", "2");
+    lassoPathEl.setAttribute("stroke-dasharray", "4 2");
+    lassoSvg.appendChild(lassoPathEl);
+
+    // Transparent overlay to capture mouse events in lasso mode
+    lassoOverlayEl = document.createElement("div");
+    lassoOverlayEl.style.cssText = "position:absolute;top:0;left:0;width:100%;height:100%;z-index:15;display:none;cursor:crosshair;";
+    container.appendChild(lassoOverlayEl);
+
+    lassoOverlayEl.addEventListener("mousedown", (e) => {
+      if (currentMode !== "lasso") return;
+      e.preventDefault();
+      isLassoing = true;
+      lassoCoords = [];
+      const rect = container.getBoundingClientRect();
+      lassoCoords.push([e.clientX - rect.left, e.clientY - rect.top]);
+      lassoSvg.style.display = "block";
+      lassoPathEl.setAttribute("points", "");
+    });
+
+    lassoOverlayEl.addEventListener("mousemove", (e) => {
+      if (!isLassoing) return;
+      const rect = container.getBoundingClientRect();
+      lassoCoords.push([e.clientX - rect.left, e.clientY - rect.top]);
+      lassoPathEl.setAttribute("points", lassoCoords.map(([x, y]) => `${x},${y}`).join(" "));
+    });
+
+    lassoOverlayEl.addEventListener("mouseup", () => {
+      if (!isLassoing) return;
+      isLassoing = false;
+      lassoSvg.style.display = "none";
+
+      if (lassoCoords.length < 3) return;
+
+      // Close the polygon
+      lassoCoords.push(lassoCoords[0]);
+
+      const rect = container.getBoundingClientRect();
+      const selectedIds = [];
+      const points = model.get("points") || [];
+      points.forEach((p, idx) => {
+        const pos = new THREE.Vector3(p.x ?? 0, p.y ?? 0, p.z ?? 0).project(camera);
+        const sx = (pos.x * 0.5 + 0.5) * rect.width;
+        const sy = (-pos.y * 0.5 + 0.5) * rect.height;
+        if (pointInPolygon(sx, sy, lassoCoords)) {
+          selectedIds.push(p.id || `point_${idx}`);
+        }
+      });
+
+      setSelection(selectedIds);
+      lassoCoords = [];
+    });
+  }
+
+  function pointInPolygon(x, y, polygon) {
+    let inside = false;
+    for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+      const [xi, yi] = polygon[i];
+      const [xj, yj] = polygon[j];
+      if (((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi)) {
+        inside = !inside;
+      }
+    }
+    return inside;
+  }
+
+  function updateSelectionHighlight() {
+    // Clear previous highlight rings
+    while (selectionGroup.children.length > 0) {
+      const obj = selectionGroup.children[0];
+      if (obj.geometry) obj.geometry.dispose();
+      if (obj.material) obj.material.dispose();
+      selectionGroup.remove(obj);
+    }
+
+    const selectedIds = model.get("selected_points") || [];
+    const points = model.get("points") || [];
+
+    if (selectedIds.length === 0) {
+      // Restore all points: show everything
+      pointsGroup.children.forEach(obj => {
+        if (obj.userData.isInstanced) {
+          // Restore original instance matrices
+          if (obj.userData._selOrigMatrices) {
+            const m = new THREE.Matrix4();
+            for (let i = 0; i < obj.userData.pointIds.length; i++) {
+              m.fromArray(obj.userData._selOrigMatrices, i * 16);
+              obj.setMatrixAt(i, m);
+            }
+            obj.instanceMatrix.needsUpdate = true;
+            obj.userData._selOrigMatrices = null;
+          }
+        } else {
+          obj.visible = true;
+        }
+      });
+      return;
+    }
+
+    const selectedSet = new Set(selectedIds);
+    const zeroMatrix = new THREE.Matrix4().makeScale(0, 0, 0);
+
+    // Hide non-selected points completely
     pointsGroup.children.forEach(obj => {
       if (obj.userData.isInstanced) {
-        // Dim non-matching instances by darkening their color
-        const indices = obj.userData.pointIndices;
-        const attr = obj.geometry.getAttribute("color");
-        if (!obj.userData._originalColors) {
-          obj.userData._originalColors = new Float32Array(attr.array);
+        const pointIds = obj.userData.pointIds;
+        // Back up original matrices on first selection
+        if (!obj.userData._selOrigMatrices) {
+          const buf = new Float32Array(pointIds.length * 16);
+          const m = new THREE.Matrix4();
+          for (let i = 0; i < pointIds.length; i++) {
+            obj.getMatrixAt(i, m);
+            m.toArray(buf, i * 16);
+          }
+          obj.userData._selOrigMatrices = buf;
         }
-        for (let i = 0; i < indices.length; i++) {
-          const matches = matchSet.has(indices[i]);
-          const dim = matches ? 1.0 : 0.12;
-          attr.array[i * 3] = obj.userData._originalColors[i * 3] * dim;
-          attr.array[i * 3 + 1] = obj.userData._originalColors[i * 3 + 1] * dim;
-          attr.array[i * 3 + 2] = obj.userData._originalColors[i * 3 + 2] * dim;
+        // Scale non-selected instances to zero
+        const m = new THREE.Matrix4();
+        for (let i = 0; i < pointIds.length; i++) {
+          if (selectedSet.has(pointIds[i])) {
+            m.fromArray(obj.userData._selOrigMatrices, i * 16);
+          } else {
+            m.copy(zeroMatrix);
+          }
+          obj.setMatrixAt(i, m);
         }
-        attr.needsUpdate = true;
-      } else if (obj.material) {
-        const idx = obj.userData.pointIndex;
-        const matches = matchSet.has(idx);
-        obj.material.transparent = !matches;
-        obj.material.opacity = matches ? 1.0 : 0.12;
-        obj.material.needsUpdate = true;
+        obj.instanceMatrix.needsUpdate = true;
+      } else {
+        obj.visible = selectedSet.has(obj.userData.pointId);
       }
     });
 
-    return { matched, total };
+    // Zoom to fit selected points
+    const selectedPoints = points.filter(p => selectedSet.has(p.id));
+    if (selectedPoints.length > 0) {
+      const box = new THREE.Box3();
+      selectedPoints.forEach(p => box.expandByPoint(new THREE.Vector3(p.x ?? 0, p.y ?? 0, p.z ?? 0)));
+      const center = box.getCenter(new THREE.Vector3());
+      const size = box.getSize(new THREE.Vector3()).length() || 0.1;
+      const distance = size / (2 * Math.tan(Math.PI * camera.fov / 360));
+      controls.target.copy(center);
+      camera.position.copy(center.clone().add(new THREE.Vector3(0, 0, distance * 0.55)));
+      camera.near = Math.max(0.01, distance * 0.001);
+      camera.far = Math.max(1000, distance * 10);
+      camera.updateProjectionMatrix();
+      controls.update();
+    }
   }
 
   return { cleanup, applyFilter };

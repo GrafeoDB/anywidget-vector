@@ -206,6 +206,16 @@ export function createSidebar(model, callbacks) {
   });
   metricSelect.addEventListener("change", () => {
     model.set("distance_metric", metricSelect.value);
+    // Auto-enable connections when a point is selected
+    const selected = model.get("selected_points") || [];
+    if (selected.length === 1) {
+      model.set("reference_point", selected[0]);
+      if (!model.get("show_connections") || model.get("k_neighbors") === 0) {
+        model.set("k_neighbors", 5);
+        model.set("show_connections", true);
+        kInput.value = 5;
+      }
+    }
     model.save_changes();
   });
   metricGroup.appendChild(metricSelect);
