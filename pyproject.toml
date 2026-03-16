@@ -1,6 +1,6 @@
 [project]
 name = "anywidget-vector"
-version = "0.3.1"
+version = "0.3.2"
 description = "Interactive 3D vector visualization with query UI for vector databases"
 readme = "README.md"
 license = "Apache-2.0"
@@ -73,6 +73,7 @@ select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF"]
 
 [tool.ruff.lint.per-file-ignores]
 "src/anywidget_vector/widget.py" = ["E501"]  # Long lines in embedded JS
+"src/anywidget_vector/ui/__init__.py" = ["E501"]  # Long lines in embedded JS
 "examples/**" = ["B007", "B018"]  # Marimo cells use bare expressions for output
 
 [tool.ty.environment]

@@ -134,11 +134,13 @@ function render({{ model, el }}) {{
 
   el.appendChild(wrapper);
 
-  // Auto-detect host theme (marimo uses Tailwind class="dark" on <html>)
+  // Auto-detect host theme (Tailwind dark/dark-theme class, data-theme, or prefers-color-scheme)
   function detectHostDark() {{
     const html = document.documentElement;
-    if (html.classList.contains("dark")) return true;
+    if (html.classList.contains("dark") || html.classList.contains("dark-theme")) return true;
     if (html.dataset.theme === "dark") return true;
+    if (document.body?.classList.contains("dark") || document.body?.classList.contains("dark-theme")) return true;
+    if (document.body?.dataset.theme === "dark") return true;
     if (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) return true;
     return false;
   }}
@@ -149,27 +151,37 @@ function render({{ model, el }}) {{
     model.save_changes();
   }}
 
-  // Detect if we're inside a themed host (marimo, jupyter, etc.)
-  const hasHostTheme = !!el.getRootNode()?.host?.tagName?.startsWith("MARIMO-");
-  if (hasHostTheme) {{
-    wrapper.classList.add("avs-auto-theme");
-    model.set("dark_mode", detectHostDark());
-    applyTheme(detectHostDark());
-    // Watch host for live theme changes
-    const themeObserver = new MutationObserver(() => {{
+  // Always auto-detect and observe theme changes
+  let autoTheme = true;
+  model.set("dark_mode", detectHostDark());
+  applyTheme(detectHostDark());
+
+  const themeObserver = new MutationObserver(() => {{
+    if (!autoTheme) return;
+    const dark = detectHostDark();
+    if (model.get("dark_mode") !== dark) {{
+      model.set("dark_mode", dark);
+      applyTheme(dark);
+    }}
+  }});
+  themeObserver.observe(document.documentElement, {{ attributes: true, attributeFilter: ["class", "data-theme", "style"] }});
+  if (document.body) {{
+    themeObserver.observe(document.body, {{ attributes: true, attributeFilter: ["class", "data-theme", "style"] }});
+  }}
+  if (window.matchMedia) {{
+    window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {{
+      if (!autoTheme) return;
       const dark = detectHostDark();
       if (model.get("dark_mode") !== dark) {{
         model.set("dark_mode", dark);
         applyTheme(dark);
       }}
     }});
-    themeObserver.observe(document.documentElement, {{ attributes: true, attributeFilter: ["class", "data-theme"] }});
-  }} else {{
-    applyTheme(model.get("dark_mode"));
   }}
 
-  // Manual toggle from settings panel still works
+  // Manual toggle from settings panel disables auto-theme
   model.on("change:dark_mode", () => {{
+    autoTheme = false;
     applyTheme(model.get("dark_mode"));
   }});
 

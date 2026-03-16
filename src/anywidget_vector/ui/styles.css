@@ -602,7 +602,4 @@
   color: var(--avs-text);
 }
 
-/* Hide dark mode toggle when host provides theme */
-.avs-wrapper.avs-auto-theme .avs-theme-toggle {
-  display: none;
-}
+/* Dark mode toggle always visible — manual toggle disables auto-theme */
