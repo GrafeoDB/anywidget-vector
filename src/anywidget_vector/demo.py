@@ -1,7 +1,7 @@
 """Demo module for anywidget-vector.
 
 Creates a pre-populated vector space widget with emoji embeddings.
-Renders immediately without any backend setup — just filter and explore.
+Renders immediately without any backend setup: just filter and explore.
 
 Usage:
     uv add "anywidget-vector[demo]"

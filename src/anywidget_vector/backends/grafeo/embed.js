@@ -1,23 +1,60 @@
 /**
  * Grafeo WASM browser-side client for vector queries.
- * Lazy-loads @grafeo-db/wasm from esm.sh on first use.
+ * Lazy-loads @grafeo-db/wasm from the jsDelivr CDN on first use.
  */
+import { grafeoRowToPoint } from "./points.js";
+
+// The only place the browser engine version is set. Keep it exact and in
+// lockstep with the `grafeo` Python extra in pyproject.toml.
+export const GRAFEO_WASM_VERSION = "0.5.44";
+export const GRAFEO_WASM_CDN = `https://cdn.jsdelivr.net/npm/@grafeo-db/wasm@${GRAFEO_WASM_VERSION}`;
 
 let wasmDb = null;
-let wasmInitialized = false;
+let wasmBindingsPromise = null;
+
+/**
+ * Load the wasm-bindgen bindings once per page.
+ *
+ * @grafeo-db/wasm is built with wasm-bindgen's bundler target: it has no init
+ * function and its entry point imports the .wasm file as an ES module, which
+ * browsers cannot do (esm.sh inlines it as raw bytes, so `new Database()`
+ * fails). The JS glue is imported directly and the binary is instantiated
+ * here with the glue as its import object.
+ *
+ * `baseUrl` exists for tests/js/wasm_smoke.mjs, which loads a local package.
+ */
+export function loadWasmBindings(baseUrl = GRAFEO_WASM_CDN) {
+  if (!wasmBindingsPromise) {
+    wasmBindingsPromise = (async () => {
+      const bindings = await import(`${baseUrl}/grafeo_wasm_bg.js`);
+      const imports = { "./grafeo_wasm_bg.js": bindings };
+      const wasmUrl = `${baseUrl}/grafeo_wasm_bg.wasm`;
+      let instance;
+      try {
+        ({ instance } = await WebAssembly.instantiateStreaming(fetch(wasmUrl), imports));
+      } catch (_) {
+        // Fallback for servers or proxies that do not send application/wasm
+        const resp = await fetch(wasmUrl);
+        if (!resp.ok) throw new Error("Failed to download " + wasmUrl + ": " + resp.status);
+        ({ instance } = await WebAssembly.instantiate(await resp.arrayBuffer(), imports));
+      }
+      bindings.__wbg_set_wasm(instance.exports);
+      return bindings;
+    })().catch((err) => {
+      wasmBindingsPromise = null; // allow a retry after a network error
+      throw err;
+    });
+  }
+  return wasmBindingsPromise;
+}
 
 /**
  * Initialize Grafeo WASM database.
  */
 export async function connect() {
-  if (!wasmInitialized) {
-    const mod = await import("https://esm.sh/@grafeo-db/wasm@0.5.0");
-    await mod.default();
-    wasmInitialized = true;
-    wasmDb = new mod.Database();
-  } else if (!wasmDb) {
-    const mod = await import("https://esm.sh/@grafeo-db/wasm@0.5.0");
-    wasmDb = new mod.Database();
+  if (!wasmDb) {
+    const bindings = await loadWasmBindings();
+    wasmDb = new bindings.Database();
   }
   return true;
 }
@@ -45,6 +82,7 @@ export function isConnected() {
 
 /**
  * Execute a query against the WASM database.
+ * The engine rejects several `;`-separated statements in one call.
  */
 export async function executeQuery(query, config) {
   if (!wasmDb) throw new Error("WASM database not initialized");
@@ -62,34 +100,5 @@ export async function executeQuery(query, config) {
  */
 export function toPoints(result) {
   if (!Array.isArray(result)) return [];
-
-  return result.map((row, i) => {
-    const point = { id: `point_${i}` };
-
-    for (const [key, val] of Object.entries(row)) {
-      if (key === "id" || key === "ID") {
-        point.id = String(val);
-      } else if (key === "vector" || key === "embedding" || key === "embeddings") {
-        const vec = Array.isArray(val) ? val : [];
-        point.x = vec[0] ?? 0;
-        point.y = vec[1] ?? 0;
-        point.z = vec[2] ?? 0;
-        point.vector = vec;
-      } else if (key === "x" || key === "y" || key === "z") {
-        point[key] = typeof val === "number" ? val : parseFloat(val) || 0;
-      } else if (val !== null && val !== undefined) {
-        if (typeof val === "object" && val.properties) {
-          Object.assign(point, val.properties);
-          if (val.id !== undefined) point.id = String(val.id);
-        } else {
-          point[key] = val;
-        }
-      }
-    }
-
-    point.x = point.x ?? 0;
-    point.y = point.y ?? 0;
-    point.z = point.z ?? 0;
-    return point;
-  });
+  return result.map((row, i) => grafeoRowToPoint(Object.entries(row ?? {}), i));
 }

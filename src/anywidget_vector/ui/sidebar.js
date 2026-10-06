@@ -319,9 +319,13 @@ export function createSidebar(model, callbacks) {
 function addStatRow(container, key, value) {
   const row = document.createElement("div");
   row.className = "avs-property-row";
-  row.innerHTML =
-    '<span class="avs-property-key">' + key + "</span>" +
-    '<span class="avs-property-value">' + value + "</span>";
+  const keyEl = document.createElement("span");
+  keyEl.className = "avs-property-key";
+  keyEl.textContent = String(key);
+  const valueEl = document.createElement("span");
+  valueEl.className = "avs-property-value";
+  valueEl.textContent = String(value);
+  row.append(keyEl, valueEl);
   container.appendChild(row);
 }
 
@@ -333,5 +337,6 @@ function rangeStr(values) {
 }
 
 function escapeHtml(str) {
-  return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  // String(): labels and ids can be numbers
+  return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }

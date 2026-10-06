@@ -132,12 +132,17 @@ function showPointProperties(container, point, isHover = false) {
 }
 
 function addPropertyRow(container, key, value) {
+  // Keys and values come from point data: textContent only, never markup
   const row = document.createElement("div");
   row.className = "avs-property-row";
-  row.innerHTML = `
-    <span class="avs-property-key">${key}</span>
-    <span class="avs-property-value" title="${String(value)}">${value}</span>
-  `;
+  const keyEl = document.createElement("span");
+  keyEl.className = "avs-property-key";
+  keyEl.textContent = String(key);
+  const valueEl = document.createElement("span");
+  valueEl.className = "avs-property-value";
+  valueEl.title = String(value);
+  valueEl.textContent = String(value);
+  row.append(keyEl, valueEl);
   container.appendChild(row);
 }
 

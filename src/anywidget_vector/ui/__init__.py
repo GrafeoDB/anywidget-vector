@@ -31,13 +31,6 @@ def get_esm() -> str:
     properties_js = _read_file(_UI_DIR / "properties.js")
     canvas_js = _read_file(_UI_DIR / "canvas.js")
 
-    # Read browser-side backend clients
-    qdrant_client = _read_file(_BACKENDS_DIR / "qdrant" / "client.js")
-    pinecone_client = _read_file(_BACKENDS_DIR / "pinecone" / "client.js")
-    weaviate_client = _read_file(_BACKENDS_DIR / "weaviate" / "client.js")
-    grafeo_browser = _read_file(_BACKENDS_DIR / "grafeo" / "browser.js")
-    grafeo_embed = _read_file(_BACKENDS_DIR / "grafeo" / "embed.js")
-
     # Build combined ESM
     esm = f"""
 // === Auto-generated ESM bundle for anywidget-vector ===
@@ -50,58 +43,7 @@ import {{ OrbitControls }} from "https://esm.sh/three@0.160.0/addons/controls/Or
 // === Constants ===
 {_strip_imports_exports(constants_js)}
 
-// === Backend Clients ===
-// Qdrant
-{_rename_functions(qdrant_client, "qdrant")}
-
-// Pinecone
-{_rename_functions(pinecone_client, "pinecone")}
-
-// Weaviate
-{_rename_functions(weaviate_client, "weaviate")}
-
-// Grafeo Server
-{_rename_functions(grafeo_browser, "grafeoServer")}
-
-// Grafeo WASM (embed)
-{_prepare_grafeo_embed(grafeo_embed)}
-
-// Unified query executor
-async function executeBackendQuery(model) {{
-  const backend = model.get("backend");
-  const query = model.get("query_input");
-  const config = model.get("backend_config") || {{}};
-  const mode = model.get("grafeo_connection_mode") || "embedded";
-
-  let response, points;
-
-  if (backend === "grafeo" && mode === "server") {{
-    const serverUrl = model.get("grafeo_server_url") || "http://localhost:7474";
-    const serverConfig = {{ ...config, url: serverUrl, language: "gql" }};
-    response = await grafeoServerExecute(query, serverConfig);
-    points = grafeoServerToPoints(response);
-  }} else if (backend === "grafeo" && mode === "wasm") {{
-    if (!grafeoEmbedIsConnected()) {{
-      await grafeoEmbedConnect();
-    }}
-    response = await grafeoEmbedExecuteQuery(query, config);
-    points = grafeoEmbedToPoints(response);
-  }} else if (backend === "qdrant") {{
-    response = await qdrantExecute(query, config);
-    points = qdrantToPoints(response);
-  }} else if (backend === "pinecone") {{
-    response = await pineconeExecute(query, config);
-    points = pineconeToPoints(response);
-  }} else if (backend === "weaviate") {{
-    const className = config.className || config.class || "Vector";
-    response = await weaviateExecute(query, config);
-    points = weaviateToPoints(response, className);
-  }} else {{
-    throw new Error(`Browser backend not supported: ${{backend}}`);
-  }}
-
-  return points;
-}}
+{_backend_clients()}
 
 // === Sidebar (Explorer) ===
 {_strip_imports_exports(sidebar_js)}
@@ -298,6 +240,78 @@ function render({{ model, el }}) {{
 export default {{ render }};
 """
     return esm
+
+
+def _backend_clients() -> str:
+    """Browser-side backend clients plus the unified query executor.
+
+    Each client exports ``executeQuery`` and ``toPoints``; they are renamed per
+    backend so they can share one module scope. Kept separate from ``get_esm``
+    so tests can run this part in Node without Three.js.
+    """
+    qdrant_client = _read_file(_BACKENDS_DIR / "qdrant" / "client.js")
+    pinecone_client = _read_file(_BACKENDS_DIR / "pinecone" / "client.js")
+    weaviate_client = _read_file(_BACKENDS_DIR / "weaviate" / "client.js")
+    grafeo_points = _read_file(_BACKENDS_DIR / "grafeo" / "points.js")
+    grafeo_browser = _read_file(_BACKENDS_DIR / "grafeo" / "browser.js")
+    grafeo_embed = _read_file(_BACKENDS_DIR / "grafeo" / "embed.js")
+
+    return f"""// === Backend Clients ===
+// Qdrant
+{_rename_functions(qdrant_client, "qdrant")}
+
+// Pinecone
+{_rename_functions(pinecone_client, "pinecone")}
+
+// Weaviate
+{_rename_functions(weaviate_client, "weaviate")}
+
+// Grafeo result rows to points (shared by server and WASM)
+{_strip_imports_exports(grafeo_points)}
+
+// Grafeo Server
+{_rename_functions(grafeo_browser, "grafeoServer")}
+
+// Grafeo WASM (embed)
+{_prepare_grafeo_embed(grafeo_embed)}
+
+// Unified query executor
+async function executeBackendQuery(model) {{
+  const backend = model.get("backend");
+  const query = model.get("query_input");
+  const config = model.get("backend_config") || {{}};
+  const mode = model.get("grafeo_connection_mode") || "embedded";
+
+  let response, points;
+
+  if (backend === "grafeo" && mode === "server") {{
+    const serverUrl = model.get("grafeo_server_url") || "http://localhost:7474";
+    const serverConfig = {{ ...config, url: serverUrl, language: "gql" }};
+    response = await grafeoServerExecute(query, serverConfig);
+    points = grafeoServerToPoints(response);
+  }} else if (backend === "grafeo" && mode === "wasm") {{
+    if (!grafeoEmbedIsConnected()) {{
+      await grafeoEmbedConnect();
+    }}
+    response = await grafeoEmbedExecuteQuery(query, config);
+    points = grafeoEmbedToPoints(response);
+  }} else if (backend === "qdrant") {{
+    response = await qdrantExecute(query, config);
+    points = qdrantToPoints(response);
+  }} else if (backend === "pinecone") {{
+    response = await pineconeExecute(query, config);
+    points = pineconeToPoints(response);
+  }} else if (backend === "weaviate") {{
+    const className = config.className || config.class || "Vector";
+    response = await weaviateExecute(query, config);
+    points = weaviateToPoints(response, className);
+  }} else {{
+    throw new Error(`Browser backend not supported: ${{backend}}`);
+  }}
+
+  return points;
+}}
+"""
 
 
 def _strip_imports_exports(code: str) -> str:
