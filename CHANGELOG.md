@@ -1,5 +1,26 @@
 # Changelog
 
+## Unreleased
+
+### Improvements
+
+- **Grafeo 0.5.44**: The `grafeo` extra now requires `grafeo>=0.5.44,<0.7` (tightened to `~=0.6.0` once 0.6.0 is out), and the `dev` extra includes grafeo and numpy so the full test suite runs everywhere
+- **WASM engine 0.5.44**: The browser-side Grafeo backend loads `@grafeo-db/wasm` 0.5.44 (was 0.5.0) from jsDelivr. The version is set once, `GRAFEO_WASM_VERSION` in `backends/grafeo/embed.js`, and a test keeps it in lockstep with the Python pin
+- **Same points in every Grafeo mode**: Embedded, server and WASM results go through the same rules: node values (`RETURN n`) contribute their properties, labels and id, unaliased columns such as `n.embedding` or `id(n)` are recognized, and explicit `x`/`y`/`z` win over the first vector components
+- **Server errors**: grafeo-server error responses show their `detail` text instead of raw JSON
+- **Scheduled engine check**: A weekly workflow runs the suite against the newest grafeo on PyPI (pre-releases included) and a smoke test against the pinned and the newest `@grafeo-db/wasm`
+
+### Bug Fixes
+
+- **Embedded Grafeo queries**: Queries failed with "'QueryBuilder' object is not iterable" because the client called `GrafeoDB.query()`, which returns a query builder. It now calls `execute()`
+- **WASM mode**: `@grafeo-db/wasm` is published for bundlers since 0.5.x, so importing it from esm.sh no longer yields a working `Database`. The loader now imports the JS glue and instantiates the binary itself. WASM vectors (`Float32Array`) are converted to arrays, so they place points and sync to Python
+- **Engine panics**: A Grafeo panic (for example a vector search with the wrong number of dimensions) escaped the query callback because pyo3 raises it as a `BaseException`. It is now reported as a query error
+- **Query status**: A Python-side query with an empty result left the status at "connecting" and kept the old points. The result now replaces the points and the status becomes "connected"; a new query clears the previous error
+- **NaN and infinity in points**: These values are not valid JSON and one NaN coordinate broke camera framing for the whole scene. Top-level non-finite values are now replaced with `None` (with a `RuntimeWarning`), and distance and focus methods treat `None` coordinates as 0
+- **HTML injection**: Point labels and values from a database were inserted as HTML in the tooltip, the properties panel and the exported HTML page. They are now set as text. `to_html()` also escapes the title and keeps a `</script>` inside the data from ending the script
+- **Vector edge cases**: `add_numpy()` with a single high-dimensional row, a 1-D or one-column array, or ids/labels/metadata of the wrong length raised an unrelated `IndexError`; it now works (single row) or raises a clear `ValueError`. `project()` handles a single point and reports ragged or non-finite vectors clearly. `compute_distances(vector_field=...)` leaves out points without that vector instead of returning infinity, and raises on vectors of different lengths instead of truncating them
+- **Version**: `anywidget_vector.__version__` reported 0.2.5; it now reads the installed package version
+
 ## 0.3.2 (2026-03-16)
 
 ### Improvements
