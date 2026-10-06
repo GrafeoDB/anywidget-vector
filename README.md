@@ -10,7 +10,7 @@ Works with Marimo, Jupyter, VS Code, Colab, anywhere [anywidget](https://anywidg
 
 - **Universal**: One widget, every notebook environment
 - **6D Visualization**: X, Y, Z position + Color, Shape, Size encoding
-- **Backend-agnostic**: NumPy, pandas, Qdrant, Chroma, Pinecone, Weaviate, LanceDB, or raw dicts
+- **Backend-agnostic**: NumPy, pandas, Grafeo, Qdrant, Chroma, Pinecone, Weaviate, LanceDB, or raw dicts
 - **Interactive**: Orbit, pan, zoom, click, hover, box select
 - **Customizable**: Color scales, shapes, sizes, themes
 - **Performant**: Instanced rendering for large point clouds
@@ -19,6 +19,7 @@ Works with Marimo, Jupyter, VS Code, Colab, anywhere [anywidget](https://anywidg
 
 ```bash
 uv add anywidget-vector
+uv add "anywidget-vector[grafeo]"   # with the embedded Grafeo backend (grafeo>=0.5.44,<0.7)
 ```
 
 ## Quick Start
@@ -309,6 +310,59 @@ widget.set_backend("lancedb", client=table)
 widget.set_backend("grafeo", client=db)
 ```
 
+Type a query in the toolbar and press Run (or Enter). An empty result clears the scene; errors show in
+the settings panel.
+
+### Grafeo
+
+[Grafeo](https://grafeo.dev/) is the default backend. It runs in three modes, set with
+`grafeo_connection_mode`:
+
+| Mode | Where queries run | Setup |
+|------|-------------------|-------|
+| `embedded` (default) | In Python, on a `grafeo.GrafeoDB` | `uv add "anywidget-vector[grafeo]"` and `set_backend("grafeo", client=db)` |
+| `server` | Over HTTP, `POST /query` on [grafeo-server](https://github.com/GrafeoDB/grafeo-server) | `grafeo_server_url="http://localhost:7474"`; start the server with `--cors-origins` so the notebook's origin may call it |
+| `wasm` | In the browser, in-memory | Nothing to install: `@grafeo-db/wasm` 0.5.44 loads from the jsDelivr CDN on the first query |
+
+```python
+import grafeo
+from anywidget_vector import VectorSpace
+
+db = grafeo.GrafeoDB()
+db.create_node(["Doc"], {"title": "Graphs", "embedding": [0.9, 0.1, 0.0]})
+db.create_node(["Doc"], {"title": "Vectors", "embedding": [0.1, 0.9, 0.2]})
+db.create_vector_index("Doc", "embedding", metric="cosine")
+
+widget = VectorSpace(color_field="distance")
+widget.set_backend("grafeo", client=db)
+widget
+```
+
+A k-nearest-neighbor query for the toolbar (GQL, one statement per query):
+
+```
+CALL grafeo.search.vector('Doc', 'embedding', [1.0, 0.0, 0.0], 10) YIELD node_id, distance
+NEXT MATCH (n:Doc) WHERE id(n) = node_id RETURN n, distance ORDER BY distance
+```
+
+How results become points, the same in every mode:
+
+- A node (`RETURN n`) contributes its properties, its labels (`labels`) and its id (`id`).
+- An unaliased column is named after its expression (`n.embedding`), and the widget reads it as `embedding`.
+- The first of `vector`, `embedding` or `embeddings` becomes the point's `vector`; its first three components
+  are the coordinates unless the row also has `x`, `y` and `z`.
+
+In `wasm` mode the database starts empty, so load data with one `INSERT` per query and create the index with
+`CREATE VECTOR INDEX doc_embedding ON :Doc(embedding) DIMENSION 3 METRIC 'cosine'`. Store embeddings
+as `vector([...])` there: a plain list is not indexed.
+
+The distance metrics of a Grafeo vector index (`cosine`, `euclidean`, `dot_product`, `manhattan`) give the
+same values as the widget's `distance_metric` and `compute_distances()`.
+
+The browser engine version is set in one place, `GRAFEO_WASM_VERSION` in
+`src/anywidget_vector/backends/grafeo/embed.js`, and moves in lockstep with the `grafeo` extra. Before a bump,
+run `node tests/js/wasm_smoke.mjs <unpacked @grafeo-db/wasm package>`.
+
 ## Export
 
 ```python
@@ -317,6 +371,9 @@ widget.to_html()                            # Self-contained HTML string
 widget.to_html(title="My Vectors")          # Custom title
 widget.save_html("vectors.html")            # Write HTML to file
 ```
+
+NaN and infinity cannot travel as JSON, so the widget replaces them with `None` in point values (with a
+`RuntimeWarning`); a missing coordinate is drawn at 0.
 
 ## Environment Support
 
