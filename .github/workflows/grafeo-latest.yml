@@ -16,25 +16,25 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.12", "3.13", "3.14"]
+        python-version: ["3.12", "3.13", "3.14", "3.15"]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+      - name: Install uv and Python ${{ matrix.python-version }}
+        uses: astral-sh/setup-uv@v10
         with:
           python-version: ${{ matrix.python-version }}
 
       - name: Install dependencies
         run: |
-          pip install -e ".[dev]"
-          pip install --upgrade --pre grafeo
+          uv sync --extra dev
+          uv pip install --upgrade --prerelease allow grafeo
 
       - name: Show grafeo build
-        run: python -c "import grafeo; print(grafeo.__version__); print(grafeo.build_info())"
+        run: uv run --no-sync python -c "import grafeo; print(grafeo.__version__); print(grafeo.build_info())"
 
       - name: Run tests
-        run: pytest
+        run: uv run --no-sync pytest
 
   wasm:
     name: WASM smoke test (${{ matrix.release }} @grafeo-db/wasm)
@@ -44,10 +44,10 @@ jobs:
       matrix:
         release: [pinned, newest]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: "22"
 

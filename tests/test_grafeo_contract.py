@@ -5,12 +5,14 @@ look, the distance metrics and their values, result ordering, ties, filters,
 dimension checks and quantization options. When an engine release changes one
 of them, a test here fails with a message that names the contract.
 
-Error codes (for example GRAFEO-X001) are never matched: they may change in 0.6.
+They pin grafeo 0.6.0. Error codes (for example GRAFEO-V001) are never
+matched; the exception class and the message are.
 """
 
 from __future__ import annotations
 
 import math
+from decimal import Decimal
 from typing import Any
 
 import grafeo
@@ -92,12 +94,56 @@ class TestResultShape:
         assert points[0]["id"].isdigit()
 
     def test_query_nan_value_becomes_none_in_widget(self, grafeo_db):
+        # A float NaN needs exponent literals: in grafeo 0.6.0, `0.0/0.0` is a decimal
+        # division by zero, which fails the query
         widget = VectorSpace()
         widget.set_backend("grafeo", client=grafeo_db)
         with pytest.warns(RuntimeWarning, match="non-finite"):
-            _run_widget_query(widget, "MATCH (n:Doc) WHERE n.name = 'a' RETURN n.name AS label, 0.0/0.0 AS score")
+            _run_widget_query(widget, "MATCH (n:Doc) WHERE n.name = 'a' RETURN n.name AS label, 0.0e0/0.0e0 AS score")
         assert widget.points[0]["label"] == "a"
         assert widget.points[0]["score"] is None
+
+    def test_number_literal_with_a_point(self, grafeo_db):
+        # grafeo 0.6 returns an exact decimal.Decimal (ISO GQL)
+        value = next(iter(grafeo_db.execute("RETURN 1.50 AS v")))["v"]
+        assert isinstance(value, Decimal)
+        assert value == Decimal("1.5")
+
+    @pytest.mark.parametrize("expression", ["0.0/0.0", "1/0"])
+    def test_division_by_zero_fails_the_query(self, grafeo_db, expression):
+        with pytest.raises(grafeo.GrafeoError):
+            grafeo_db.execute(f"RETURN {expression} AS v")
+
+    def test_number_literals_reach_widget_as_floats(self, grafeo_db):
+        widget = VectorSpace()
+        widget.set_backend("grafeo", client=grafeo_db)
+        _run_widget_query(
+            widget,
+            "MATCH (n:Doc) WHERE n.name = 'a' RETURN n.name AS label, 0.25 AS score, [0.5, 1.5] AS pair, "
+            "1.5 AS x, -2.0 AS y, 0.125 AS z",
+        )
+        assert widget.query_error is None
+        point = widget.points[0]
+        assert {k: point[k] for k in ("score", "pair", "x", "y", "z")} == {
+            "score": 0.25,
+            "pair": [0.5, 1.5],
+            "x": 1.5,
+            "y": -2.0,
+            "z": 0.125,
+        }
+        assert type(point["score"]) is float
+        assert all(type(v) is float for v in point["pair"])
+
+    def test_single_insert_returns_no_rows(self, grafeo_db):
+        # Since 0.6 an INSERT without RETURN has no result (0.5.44 returned the new node),
+        # so a write from the toolbar clears the scene
+        widget = VectorSpace(points=[{"id": "old", "x": 0, "y": 0, "z": 0}])
+        widget.set_backend("grafeo", client=grafeo_db)
+        _run_widget_query(widget, "INSERT (:Doc {name: 'f', embedding: vector([0.1, 0.2, 0.3]), cat: 'y'})")
+        assert widget.query_error is None
+        assert widget.connection_status == "connected"
+        assert widget.points == []
+        assert len(execute_query(grafeo_db, "MATCH (n:Doc) RETURN n")) == len(DOCS) + 1
 
 
 class TestMetrics:
@@ -125,7 +171,7 @@ class TestMetrics:
         assert engine["a"] == min(engine.values())
 
     def test_unknown_metric_is_rejected(self):
-        with pytest.raises(RuntimeError):
+        with pytest.raises(grafeo.GrafeoError, match="hamming"):
             grafeo.GrafeoDB().create_vector_index("Doc", "embedding", dimensions=3, metric="hamming")
 
     @pytest.mark.parametrize("metric", WIDGET_METRICS)
@@ -143,16 +189,28 @@ class TestMetrics:
 
 
 class TestTies:
-    def test_ties_all_returned_order_unspecified(self):
+    def test_ties_all_returned(self):
         db = grafeo.GrafeoDB()
         ids = {db.create_node(["P"], {"v": v}).id: name for name, v in [("t1", [1.0, 0.0]), ("t2", [1.0, 0.0])]}
         ids[db.create_node(["P"], {"v": [0.0, 1.0]}).id] = "far"
         db.create_vector_index("P", "v", dimensions=2, metric="euclidean")
 
         results = db.vector_search("P", "v", [1.0, 0.0], k=2)
-        # Both tied nodes come back; the engine does not promise an order among them
-        assert {ids[i] for i, _ in results} == {"t1", "t2"}
+        # Both tied nodes come back, ranked by ascending node id (grafeo#619)
+        assert [ids[i] for i, _ in results] == [ids[i] for i in sorted(ids)[:2]] == ["t1", "t2"]
         assert [d for _, d in results] == [0.0, 0.0]
+
+    def test_cut_inside_a_tie_keeps_tied_nodes_only(self):
+        db = grafeo.GrafeoDB()
+        tied = {db.create_node(["P"], {"v": [1.0, 0.0]}).id for _ in range(6)}
+        far = db.create_node(["P"], {"v": [0.0, 1.0]}).id
+        db.create_vector_index("P", "v", dimensions=2, metric="euclidean")
+
+        results = db.vector_search("P", "v", [1.0, 0.0], k=3)
+        found = [i for i, _ in results]
+        # A cut inside a tie keeps the lowest node ids, in ascending order (grafeo#619)
+        assert found == sorted(tied)[:3]
+        assert far not in found
 
     def test_widget_neighbor_ties_keep_point_order(self):
         widget = VectorSpace(
@@ -171,6 +229,21 @@ class TestFilters:
         names = _names(grafeo_db)
         results = grafeo_db.vector_search("Doc", "embedding", [1.0, 0.0, 0.0], k=5, filters={"cat": "y"})
         assert [names[i] for i, _ in results] == ["b", "d"]
+
+    @pytest.mark.parametrize(
+        ("filters", "expected"),
+        [
+            ({"cat": {"$in": ["y"]}}, {"b", "d"}),
+            ({"cat": {"$ne": "x"}}, {"b", "d"}),
+            ({"cat": "x", "name": {"$in": ["a", "e"]}}, {"a", "e"}),
+        ],
+    )
+    def test_vector_search_filter_operators(self, grafeo_db, filters, expected):
+        grafeo_db.create_vector_index("Doc", "embedding", dimensions=3, metric="cosine")
+        names = _names(grafeo_db)
+        results = grafeo_db.vector_search("Doc", "embedding", [1.0, 0.0, 0.0], k=5, filters=filters)
+        assert {names[i] for i, _ in results} == expected
+        assert [d for _, d in results] == sorted(d for _, d in results)
 
     def test_filter_in_query_reaches_widget(self, grafeo_db):
         points = execute_query(grafeo_db, "MATCH (n:Doc) WHERE n.cat = 'y' RETURN n ORDER BY n.name")
@@ -222,23 +295,51 @@ class TestDimensions:
         grafeo_db.create_vector_index("Doc", "embedding", metric="euclidean")
         assert len(grafeo_db.vector_search("Doc", "embedding", [1.0, 0.0, 0.0], k=1)) == 1
 
+    def test_zero_dimensions_rejected(self):
+        with pytest.raises(grafeo.GrafeoError, match="dimension"):
+            grafeo.GrafeoDB().create_vector_index("Doc", "embedding", dimensions=0, metric="cosine")
+
     def test_wrong_dimension_insert_raises_grafeo_error(self, grafeo_db):
         grafeo_db.create_vector_index("Doc", "embedding", dimensions=3, metric="cosine")
-        with pytest.raises(grafeo.GrafeoError):
+        with pytest.raises(grafeo.GrafeoError, match="3 dimensions"):
             grafeo_db.create_node(["Doc"], {"name": "bad", "embedding": [1.0, 0.0]})
 
+    def test_wrong_dimension_search_raises_grafeo_error(self, grafeo_db):
+        # grafeo 0.5.44 panicked here (pyo3 PanicException, a BaseException); 0.6 raises
+        # a GrafeoError that names both sizes, and the database keeps answering
+        grafeo_db.create_vector_index("Doc", "embedding", dimensions=3, metric="cosine")
+        with pytest.raises(grafeo.GrafeoError, match=r"2 dimensions.*expects 3"):
+            grafeo_db.vector_search("Doc", "embedding", [1.0, 0.0], k=2)
+        with pytest.raises(grafeo.GrafeoError, match=r"2 dimensions.*expects 3"):
+            execute_query(grafeo_db, SEARCH_QUERY.format(vector="[1.0, 0.0]", k=2))
+        assert len(grafeo_db.vector_search("Doc", "embedding", [1.0, 0.0, 0.0], k=2)) == 2
+
     def test_wrong_dimension_search_is_a_query_error_in_widget(self, grafeo_db):
-        # grafeo 0.5.44 panics here (pyo3 PanicException, a BaseException); the widget
-        # must still report it as a query error instead of letting it escape the callback.
         grafeo_db.create_vector_index("Doc", "embedding", dimensions=3, metric="cosine")
         widget = VectorSpace(points=[{"id": "keep", "x": 0, "y": 0, "z": 0}])
         widget.set_backend("grafeo", client=grafeo_db)
         _run_widget_query(widget, SEARCH_QUERY.format(vector="[1.0, 0.0]", k=2))
 
         assert widget.connection_status == "error"
-        assert widget.query_error
+        error = widget.query_error or ""
+        assert "expects 3" in error
+        assert "Grafeo engine error" not in error  # a regular error, not a panic
         assert widget.points == [{"id": "keep", "x": 0, "y": 0, "z": 0}]
         # The database is still usable afterwards
+        assert len(execute_query(grafeo_db, "MATCH (n:Doc) RETURN n")) == len(DOCS)
+
+    def test_non_finite_query_vector_rejected(self, grafeo_db):
+        grafeo_db.create_vector_index("Doc", "embedding", dimensions=3, metric="cosine")
+        with pytest.raises(grafeo.GrafeoError, match="NaN"):
+            grafeo_db.vector_search("Doc", "embedding", [math.nan, 0.0, 0.0], k=2)
+        with pytest.raises(grafeo.GrafeoError, match="NaN"):
+            execute_query(grafeo_db, SEARCH_QUERY.format(vector="[0.0e0/0.0e0, 0.0, 0.0]", k=2))
+
+    def test_non_finite_indexed_vector_rejected(self, grafeo_db):
+        # The widget turns NaN into None for display; the engine refuses it in an indexed vector
+        grafeo_db.create_vector_index("Doc", "embedding", dimensions=3, metric="cosine")
+        with pytest.raises(grafeo.GrafeoError, match="NaN"):
+            grafeo_db.create_node(["Doc"], {"name": "nan", "embedding": [math.nan, 0.0, 0.0]})
         assert len(execute_query(grafeo_db, "MATCH (n:Doc) RETURN n")) == len(DOCS)
 
 

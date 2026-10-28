@@ -838,8 +838,8 @@ body {{ margin: 0; overflow: hidden; font-family: sans-serif; }}
 <div id="container"></div>
 <div id="tooltip" class="tooltip"></div>
 <script type="module">
-import * as THREE from "https://esm.sh/three@0.160.0";
-import {{ OrbitControls }} from "https://esm.sh/three@0.160.0/examples/jsm/controls/OrbitControls.js";
+import * as THREE from "https://esm.sh/three@0.186.1";
+import {{ OrbitControls }} from "https://esm.sh/three@0.186.1/examples/jsm/controls/OrbitControls.js";
 
 const DATA = {json_data};
 const OPTIONS = {json_options};

@@ -19,8 +19,9 @@ def _query_method(client: Any) -> Callable[[str], Any]:
 
 def _is_engine_panic(exc: BaseException) -> bool:
     # pyo3 turns a Rust panic into pyo3_runtime.PanicException, a BaseException
-    # subclass that `except Exception` does not catch. grafeo 0.5.44 panics on,
-    # for example, a vector search whose query has the wrong number of dimensions.
+    # subclass that `except Exception` does not catch. grafeo 0.5.44 panicked on a
+    # vector search whose query has the wrong number of dimensions; 0.6 raises a
+    # GrafeoError there, and this guard stays for any other engine bug.
     cls = type(exc)
     return cls.__name__ == "PanicException" and cls.__module__ == "pyo3_runtime"
 

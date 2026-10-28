@@ -19,8 +19,11 @@ Works with Marimo, Jupyter, VS Code, Colab, anywhere [anywidget](https://anywidg
 
 ```bash
 uv add anywidget-vector
-uv add "anywidget-vector[grafeo]"   # with the embedded Grafeo backend (grafeo>=0.5.44,<0.7)
+uv add "anywidget-vector[grafeo]"   # with the embedded Grafeo backend (grafeo 0.6)
 ```
+
+Requires Python 3.12 or later. The `grafeo` extra installs grafeo 0.6 (`grafeo>=0.6.0,<0.7`); the browser-side WASM mode loads the matching `@grafeo-db/wasm` from a CDN. Upgrading from 0.3 with Grafeo:
+see [Upgrading to 0.4](#upgrading-to-04).
 
 ## Quick Start
 
@@ -322,7 +325,7 @@ the settings panel.
 |------|-------------------|-------|
 | `embedded` (default) | In Python, on a `grafeo.GrafeoDB` | `uv add "anywidget-vector[grafeo]"` and `set_backend("grafeo", client=db)` |
 | `server` | Over HTTP, `POST /query` on [grafeo-server](https://github.com/GrafeoDB/grafeo-server) | `grafeo_server_url="http://localhost:7474"`; start the server with `--cors-origins` so the notebook's origin may call it |
-| `wasm` | In the browser, in-memory | Nothing to install: `@grafeo-db/wasm` 0.5.44 loads from the jsDelivr CDN on the first query |
+| `wasm` | In the browser, in-memory | Nothing to install: `@grafeo-db/wasm` 0.6.0 loads from the jsDelivr CDN on the first query |
 
 ```python
 import grafeo
@@ -351,10 +354,17 @@ How results become points, the same in every mode:
 - An unaliased column is named after its expression (`n.embedding`), and the widget reads it as `embedding`.
 - The first of `vector`, `embedding` or `embeddings` becomes the point's `vector`; its first three components
   are the coordinates unless the row also has `x`, `y` and `z`.
+- A GQL number with a point (`0.5`) is an exact decimal in Grafeo 0.6; the widget turns it into a float, also inside
+  lists and maps, so `RETURN 0.5 AS score` colors and sizes points like any other number.
 
 In `wasm` mode the database starts empty, so load data with one `INSERT` per query and create the index with
 `CREATE VECTOR INDEX doc_embedding ON :Doc(embedding) DIMENSION 3 METRIC 'cosine'`. Store embeddings
-as `vector([...])` there: a plain list is not indexed.
+as `vector([...])` there: a plain list is not indexed. An `INSERT` returns no rows, so it clears the scene; run a
+`MATCH` or a search afterwards to see the data.
+
+A query vector with another number of dimensions than the index, or with NaN, is a query error that names the
+sizes (for example "the query vector has 2 dimensions; the index on :Doc(embedding) expects 3"); the points stay
+as they were.
 
 The distance metrics of a Grafeo vector index (`cosine`, `euclidean`, `dot_product`, `manhattan`) give the
 same values as the widget's `distance_metric` and `compute_distances()`.
@@ -362,6 +372,27 @@ same values as the widget's `distance_metric` and `compute_distances()`.
 The browser engine version is set in one place, `GRAFEO_WASM_VERSION` in
 `src/anywidget_vector/backends/grafeo/embed.js`, and moves in lockstep with the `grafeo` extra. Before a bump,
 run `node tests/js/wasm_smoke.mjs <unpacked @grafeo-db/wasm package>`.
+
+### Upgrading to 0.4
+
+0.4 moves the Grafeo backend to Grafeo 0.6, which changes some query results. What to check:
+
+- **Install**: the `grafeo` extra needs grafeo 0.6; `uv add "anywidget-vector[grafeo]"` upgrades it. The `wasm` mode
+  loads `@grafeo-db/wasm` 0.6 from the CDN by itself.
+- **Database files**: Grafeo 0.6 keeps every database in a single file. The first read-write open of a 0.5.x
+  database migrates it and keeps the old file as `<file>.pre-0.6`; 0.5.x cannot open the migrated file, so stop
+  every 0.5.x process first and keep the `.pre-0.6` copy until you no longer need to go back. Opening a directory that
+  is not a 0.5.x database fails: pass a file path, such as `data/vectors.grafeo`.
+- **Numbers with a point**: `0.1` is an exact decimal in GQL, so `0.0/0.0` and `1/0` now fail the query (division by
+  zero) instead of giving NaN or null, and integer overflow fails too. Write float literals with an exponent
+  (`0.0e0 / 0.0e0`) where you want IEEE results.
+- **Writes**: a `WHERE` right after `INSERT`, `CREATE`, `MERGE` or `DELETE` is an error; put the condition before the
+  write. An `INSERT` alone returns no rows.
+- **Ordering**: GQL `ORDER BY` puts nulls last in both directions; add `NULLS FIRST` for the old descending order.
+- **Errors**: a vector search with a query of the wrong size raises `grafeo.GrafeoError` (Grafeo 0.5.44 panicked);
+  the widget shows it as a query error either way.
+
+See Grafeo's [Upgrading to 0.6](https://grafeo.dev/upgrading/0.6/) for the full list.
 
 ## Export
 

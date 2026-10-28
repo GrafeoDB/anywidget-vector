@@ -34,8 +34,8 @@ def get_esm() -> str:
     # Build combined ESM
     esm = f"""
 // === Auto-generated ESM bundle for anywidget-vector ===
-import * as THREE from "https://esm.sh/three@0.160.0";
-import {{ OrbitControls }} from "https://esm.sh/three@0.160.0/addons/controls/OrbitControls.js";
+import * as THREE from "https://esm.sh/three@0.186.1";
+import {{ OrbitControls }} from "https://esm.sh/three@0.186.1/addons/controls/OrbitControls.js";
 
 // === Icons ===
 {_strip_imports_exports(icons_js)}

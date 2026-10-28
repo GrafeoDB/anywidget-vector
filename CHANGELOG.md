@@ -1,14 +1,29 @@
 # Changelog
 
-## Unreleased
+## 0.4.0 (unreleased)
+
+Requires Python 3.12 or later; the Grafeo backend requires grafeo 0.6. See "Upgrading to 0.4" in the README.
+
+### Breaking
+
+- **Grafeo 0.6**: The `grafeo` extra requires `grafeo>=0.6.0,<0.7`; grafeo 0.5.x is no longer supported. Grafeo 0.6 changes query results and files, and these reach the widget's Grafeo backend:
+  - Every database is a single file. The first read-write open of a 0.5.x database migrates it and keeps the old file as `<file>.pre-0.6`, which 0.5.x needs to go back; opening a directory that is not a 0.5.x database fails
+  - A GQL number with a point is an exact decimal, so `0.0/0.0` and `1/0` fail the query (division by zero) where they gave NaN or null, and so does integer overflow. Use exponent literals (`0.0e0/0.0e0`) for IEEE floats
+  - A `WHERE` right after `INSERT`, `CREATE`, `MERGE` or `DELETE` is an error, and an `INSERT` alone returns no rows, so running one from the toolbar clears the scene
+  - GQL `ORDER BY` puts nulls last in both directions
+- **WASM engine 0.6**: The browser-side Grafeo backend loads `@grafeo-db/wasm` 0.6.0 (was 0.5.0 in 0.3.2) from jsDelivr. The version is set once, `GRAFEO_WASM_VERSION` in `backends/grafeo/embed.js`, and a test keeps it in lockstep with the Python pin (npm and PyPI spellings of a pre-release, such as `0.6.1-rc.2` and `0.6.1rc2`, compare as the same version)
 
 ### Improvements
 
-- **Grafeo 0.5.44**: The `grafeo` extra now requires `grafeo>=0.5.44,<0.7` (tightened to `~=0.6.0` once 0.6.0 is out), and the `dev` extra includes grafeo and numpy so the full test suite runs everywhere
-- **WASM engine 0.5.44**: The browser-side Grafeo backend loads `@grafeo-db/wasm` 0.5.44 (was 0.5.0) from jsDelivr. The version is set once, `GRAFEO_WASM_VERSION` in `backends/grafeo/embed.js`, and a test keeps it in lockstep with the Python pin
+- **Decimals become numbers**: Grafeo 0.6 returns decimals (`decimal.Decimal` in Python, `{"$decimal": "1.50"}` in WASM). The widget turns them into floats in every Grafeo mode, also inside lists, maps and node properties, so `RETURN 0.5 AS score` maps to color and size, `1.5 AS x` places a point, and a plain list `[1.0, 0.0, 0.0]` still gives a vector. Without this, Python points could not be sent to the browser as JSON and WASM points landed at the origin
+- **Vector search errors**: A query vector of the wrong size or with NaN is a regular `grafeo.GrafeoError` in Grafeo 0.6 (0.5.44 panicked, and its WASM build trapped), shown in the widget with the sizes it names. The panic guard stays for any other engine bug
+- **Three.js 0.186.1**: The widget and `to_html()` load Three.js 0.186.1 (was 0.160.0) from esm.sh; Three.js dropped WebGL 1 in 0.163, so a browser needs WebGL 2
+- **Dependencies**: All locked dependencies refreshed (`uv lock --upgrade`); the `dev` extra includes grafeo, numpy and packaging so the full test suite runs everywhere. CI and the release workflow use uv (`uv lock --check`, `uv sync --locked`, `uv build`) and current GitHub Actions (checkout v7, setup-uv v10, setup-node v7, upload-artifact v7, download-artifact v8). The `tool.uv.dev-dependencies` table moved to `[dependency-groups]`, and ruff leaves Markdown files alone
+- **Engine contract tests**: The tests that pin Grafeo behavior now cover 0.6: error classes and messages for unknown metrics, zero dimensions, wrong-size and NaN query vectors and NaN in an indexed vector, filter operators (`$in`, `$ne`), tied distances, decimal literals and an `INSERT` without rows. `tests/js/wasm_smoke.mjs` checks decimals and the wrong-size error in WASM
 - **Same points in every Grafeo mode**: Embedded, server and WASM results go through the same rules: node values (`RETURN n`) contribute their properties, labels and id, unaliased columns such as `n.embedding` or `id(n)` are recognized, and explicit `x`/`y`/`z` win over the first vector components
 - **Server errors**: grafeo-server error responses show their `detail` text instead of raw JSON
 - **Scheduled engine check**: A weekly workflow runs the suite against the newest grafeo on PyPI (pre-releases included) and a smoke test against the pinned and the newest `@grafeo-db/wasm`
+- **Python 3.15**: Tested on Python 3.15; CI runs the suite on 3.12 to 3.15 and the classifiers list 3.12 to 3.15
 
 ### Bug Fixes
 

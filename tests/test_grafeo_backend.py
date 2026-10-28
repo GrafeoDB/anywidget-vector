@@ -2,13 +2,26 @@
 
 from __future__ import annotations
 
+import json
 import math
+from decimal import Decimal
+from typing import Any
 
 import numpy as np
 import pytest
 
 from anywidget_vector.backends.grafeo.client import execute_query
 from anywidget_vector.backends.grafeo.converter import column_key, is_node, row_to_point, to_points
+
+
+def _contains_decimal(value: Any) -> bool:
+    if isinstance(value, Decimal):
+        return True
+    if isinstance(value, dict):
+        return any(_contains_decimal(v) for v in value.values())
+    if isinstance(value, list | tuple):
+        return any(_contains_decimal(v) for v in value)
+    return False
 
 
 class TestColumnKey:
@@ -91,6 +104,32 @@ class TestRowToPoint:
             "y": 0.0,
             "z": 0.0,
         }
+
+    def test_row_to_point_decimals_become_floats(self):
+        # grafeo 0.6: a GQL number with a point is an exact decimal (decimal.Decimal)
+        node = {"_id": 1, "_labels": ["Doc"], "weight": Decimal("1.50"), "tags": [Decimal("0.1"), "a"]}
+        row = {
+            "n": node,
+            "score": Decimal("0.25"),
+            "meta": {"a": Decimal("3.0"), "b": (Decimal("1"),)},
+            "embedding": [Decimal("9.0"), Decimal("8.0"), Decimal("7.0")],
+            "x": Decimal("1.5"),
+        }
+        point = row_to_point(row, 0)
+        assert point == {
+            "id": "1",
+            "labels": ["Doc"],
+            "weight": 1.5,
+            "tags": [0.1, "a"],
+            "score": 0.25,
+            "meta": {"a": 3.0, "b": [1.0]},
+            "vector": [9.0, 8.0, 7.0],
+            "x": 1.5,
+            "y": 8.0,
+            "z": 7.0,
+        }
+        assert not _contains_decimal(point)
+        json.dumps(point)  # points travel to the browser as JSON
 
     def test_is_node(self):
         assert is_node({"_id": 1, "_labels": ["A"]})

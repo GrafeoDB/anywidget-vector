@@ -521,7 +521,7 @@ class TestToHtml:
         assert "<title>Vector Visualization</title>" in html
         assert 'id="container"' in html
         assert 'id="tooltip"' in html
-        assert "three@0.160.0" in html
+        assert "three@0.186.1" in html
 
     def test_to_html_embeds_data(self):
         """Point data is serialized into the HTML."""
@@ -568,7 +568,7 @@ class TestToHtml:
         assert out.exists()
         content = out.read_text(encoding="utf-8")
         assert "<title>Saved Vectors</title>" in content
-        assert "three@0.160.0" in content
+        assert "three@0.186.1" in content
 
 
 class TestToJson:

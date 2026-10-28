@@ -17,6 +17,8 @@ from collections import Counter
 from pathlib import Path
 
 import pytest
+from packaging.requirements import Requirement
+from packaging.version import Version
 
 from anywidget_vector.ui import _backend_clients, _strip_imports_exports, get_esm
 from tests.support import NODE, run_node_module
@@ -44,7 +46,7 @@ class TestBundleStructure:
     def test_get_esm_only_three_imports_and_default_export(self, esm):
         imports = [line for line in esm.splitlines() if line.lstrip().startswith("import ")]
         exports = [line for line in esm.splitlines() if line.lstrip().startswith("export ")]
-        assert all("https://esm.sh/three@0.160.0" in line for line in imports), imports
+        assert all("https://esm.sh/three@0.186.1" in line for line in imports), imports
         assert len(imports) == 2
         assert exports == ["export default { render };"]
 
@@ -118,7 +120,8 @@ class TestWasmPin:
         assert "const GRAFEO_WASM_CDN = `https://cdn.jsdelivr.net/npm/@grafeo-db/wasm@${GRAFEO_WASM_VERSION}`;" in esm
 
     def test_wasm_version_is_exact(self, esm):
-        assert re.fullmatch(r"\d+\.\d+\.\d+", _wasm_version(esm))
+        # An exact npm version (a pre-release such as 0.6.0-beta.1 included), never a range
+        assert re.fullmatch(r"\d+\.\d+\.\d+(?:-[0-9A-Za-z]+(?:\.[0-9A-Za-z]+)*)?", _wasm_version(esm))
         assert esm.count("GRAFEO_WASM_VERSION = ") == 1
 
     def test_wasm_version_in_lockstep_with_python_pin(self, esm):
@@ -126,11 +129,21 @@ class TestWasmPin:
         extras = project["optional-dependencies"]
         (grafeo_pin,) = extras["grafeo"]
         assert grafeo_pin in extras["dev"], "the dev extra should test the same grafeo range"
-        lower = re.search(r"(?:>=|~=|==)\s*(\d+\.\d+\.\d+)", grafeo_pin)
-        assert lower, grafeo_pin
-        assert lower.group(1) == _wasm_version(esm), (
+        specifier = Requirement(grafeo_pin).specifier
+        lower = [spec.version for spec in specifier if spec.operator in (">=", "~=", "==")]
+        assert len(lower) == 1, grafeo_pin
+        # npm writes 0.6.0-beta.1 where PyPI writes 0.6.0b1: compare them as versions
+        wasm = Version(_wasm_version(esm))
+        assert Version(lower[0]) == wasm, (
             "bump GRAFEO_WASM_VERSION in backends/grafeo/embed.js together with the grafeo extra"
         )
+        assert specifier.contains(wasm, prereleases=True), (grafeo_pin, str(wasm))
+
+    @pytest.mark.parametrize(
+        ("npm", "pypi"), [("0.6.0-beta.1", "0.6.0b1"), ("0.6.0", "0.6.0"), ("0.6.1-rc.2", "0.6.1rc2")]
+    )
+    def test_npm_and_pypi_spellings_compare_equal(self, npm, pypi):
+        assert Version(npm) == Version(pypi)
 
 
 def _backend_harness(test_code: str) -> str:
@@ -173,6 +186,39 @@ console.log(JSON.stringify(grafeoEmbedToPoints(null)));
         assert (points[2]["x"], points[2]["y"], points[2]["z"]) == (0, 4, 5)
         assert (points[3]["x"], points[3]["y"], points[3]["z"]) == (1, 2, 0)
         assert json.loads(empty_line) == []
+
+    def test_wasm_decimals_become_numbers(self, tmp_path):
+        # grafeo 0.6: a GQL number with a point is an exact decimal, {$decimal: "..."} in WASM
+        out = run_node_module(
+            _backend_harness(
+                """
+const dec = (text) => ({ $decimal: text });
+const rows = [
+  { n: { _id: 1, _labels: ["Doc"], weight: dec("1.50"), tags: [dec("0.1"), "a"] }, score: dec("0.25") },
+  { x: dec("1.5"), y: dec("-2"), z: dec("0.125"), embedding: [dec("9.0"), dec("8.0"), dec("7.0")] },
+  { meta: { a: dec("3.0"), b: { $decimal: "1", other: 2 } }, embedding: [dec("0.5"), dec("0.25")] },
+];
+console.log(JSON.stringify(grafeoEmbedToPoints(rows)));
+"""
+            ),
+            tmp_path,
+        )
+        points = json.loads(out)
+        assert points[0] == {
+            "id": "1",
+            "labels": ["Doc"],
+            "weight": 1.5,
+            "tags": [0.1, "a"],
+            "score": 0.25,
+            "x": 0,
+            "y": 0,
+            "z": 0,
+        }
+        assert (points[1]["x"], points[1]["y"], points[1]["z"]) == (1.5, -2, 0.125)
+        assert points[1]["vector"] == [9, 8, 7]
+        # Only a map whose one key is $decimal is a decimal
+        assert points[2]["meta"] == {"a": 3, "b": {"$decimal": "1", "other": 2}}
+        assert (points[2]["x"], points[2]["y"], points[2]["z"]) == (0.5, 0.25, 0)
 
     def test_server_to_points_rows_as_arrays(self, tmp_path):
         response = {

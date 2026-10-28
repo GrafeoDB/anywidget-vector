@@ -1,7 +1,7 @@
 // Smoke test of the browser-side Grafeo backend (backends/grafeo/embed.js)
 // against a real, unpacked @grafeo-db/wasm package.
 //
-//   npm pack @grafeo-db/wasm@0.5.44 && tar -xzf grafeo-db-wasm-0.5.44.tgz
+//   npm pack @grafeo-db/wasm@0.6.0 && tar -xzf grafeo-db-wasm-0.6.0.tgz
 //   node tests/js/wasm_smoke.mjs package
 //
 // It runs the same loader the widget uses in the browser (glue import plus
@@ -74,6 +74,15 @@ check(unaliased[0]?.name === "gamma" && unaliased[0]?.y === 1, "unaliased column
 const cypher = embed.toPoints(await run("MATCH (n:Doc) RETURN n.name AS name", { language: "cypher" }));
 check(cypher.length === docs.length, "Cypher goes through executeWithLanguage");
 
+// grafeo 0.6.0: a GQL number with a point is an exact decimal, {$decimal: "..."} in WASM
+const numbers = embed.toPoints(
+  await run("MATCH (n:Doc) WHERE n.name = 'alpha' RETURN n.name AS name, 0.25 AS score, 1.5 AS x, [0.5, 2.0] AS pair"),
+);
+check(
+  numbers[0]?.score === 0.25 && numbers[0]?.x === 1.5 && JSON.stringify(numbers[0]?.pair) === "[0.5,2]",
+  "number literals with a point arrive as numbers",
+);
+
 let rejected = false;
 try {
   await run("MATCH (n) RETURN n; MATCH (m) RETURN m");
@@ -81,6 +90,16 @@ try {
   rejected = true;
 }
 check(rejected, "several statements in one call raise an error");
+
+// 0.5.44 trapped (`unreachable`) on a query vector of the wrong size, which broke the module
+let sizeError = "";
+try {
+  await run(search.replace("[1.0, 0.1, 0.0]", "[1.0, 0.1]"));
+} catch (err) {
+  sizeError = String(err?.message ?? err);
+}
+check(/expects 3/.test(sizeError), `a query vector of the wrong size is an error (${sizeError})`);
+check(embed.toPoints(await run(search)).length === 3, "the database keeps answering after that error");
 
 await embed.disconnect();
 check(!embed.isConnected(), "disconnect() frees the database");

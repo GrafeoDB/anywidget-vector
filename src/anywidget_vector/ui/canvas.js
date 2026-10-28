@@ -1,6 +1,6 @@
 // 3D Canvas component using Three.js
-import * as THREE from "https://esm.sh/three@0.160.0";
-import { OrbitControls } from "https://esm.sh/three@0.160.0/addons/controls/OrbitControls.js";
+import * as THREE from "https://esm.sh/three@0.186.1";
+import { OrbitControls } from "https://esm.sh/three@0.186.1/addons/controls/OrbitControls.js";
 import { COLOR_SCALES, CATEGORICAL_COLORS } from "./constants.js";
 
 // Shape geometries factory

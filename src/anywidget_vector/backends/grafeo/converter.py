@@ -3,10 +3,12 @@
 Mirrors ``backends/grafeo/points.js`` (server and WASM backends), so a query
 gives the same points in every Grafeo connection mode.
 
-Engine value encoding (grafeo 0.5.44): a node is ``{"_id", "_labels", **properties}``,
-a vector is a list of floats, and an unaliased column is named after its
-expression (``n.embedding``, ``id(n)``). Coordinates come from explicit x/y/z
-fields when present, otherwise from the first three vector components.
+Engine value encoding (grafeo 0.6): a node is ``{"_id", "_labels", **properties}``,
+a vector is a list of floats, an exact decimal (a GQL number with a point, such as
+``RETURN 0.5 AS score``) is a ``decimal.Decimal``, and an unaliased column is named
+after its expression (``n.embedding``, ``id(n)``). Decimals become floats, as points
+travel to the browser as JSON. Coordinates come from explicit x/y/z fields when
+present, otherwise from the first three vector components.
 """
 
 from __future__ import annotations
@@ -14,6 +16,7 @@ from __future__ import annotations
 import math
 import re
 from collections.abc import Iterable, Mapping
+from decimal import Decimal
 from typing import Any
 
 _VECTOR_KEYS = frozenset({"vector", "embedding", "embeddings"})
@@ -34,6 +37,17 @@ def column_key(column: str) -> str:
 def is_node(value: Any) -> bool:
     """True for a Grafeo node value (a mapping with ``_id`` and ``_labels``)."""
     return isinstance(value, Mapping) and "_id" in value and isinstance(value.get("_labels"), list | tuple)
+
+
+def _plain(value: Any) -> Any:
+    """Turn engine decimals into floats, also inside lists and maps, so the value is JSON."""
+    if isinstance(value, Decimal):
+        return float(value)
+    if isinstance(value, list | tuple):
+        return [_plain(v) for v in value]
+    if isinstance(value, Mapping):
+        return {k: _plain(v) for k, v in value.items()}
+    return value
 
 
 def _as_vector(value: Any) -> list[float] | None:
@@ -59,14 +73,14 @@ def _row_fields(row: Mapping[str, Any]) -> list[tuple[str, Any]]:
     column_keys: set[str] = set()
     for column, value in row.items():
         if is_node(value):
-            fields.extend((k, v) for k, v in value.items() if not str(k).startswith("_"))
+            fields.extend((k, _plain(v)) for k, v in value.items() if not str(k).startswith("_"))
             # The engine identity wins over a user property named `id`
             fields.append(("id", value["_id"]))
             fields.append(("labels", list(value["_labels"])))
             continue
         # `RETURN a.name, b.name`: keep the second one under its full column name
         key = column_key(str(column))
-        fields.append((str(column) if key in column_keys else key, value))
+        fields.append((str(column) if key in column_keys else key, _plain(value)))
         column_keys.add(key)
     return fields
 

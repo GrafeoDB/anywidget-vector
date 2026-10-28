@@ -4,9 +4,11 @@
  * Shared by the Grafeo server (HTTP) and WASM backends. The embedded (Python)
  * backend applies the same rules in backends/grafeo/converter.py.
  *
- * Engine value encoding (grafeo 0.5.44):
- *   node:   {_id, _labels, ...properties}
- *   vector: Array (server, Python) or Float32Array (WASM)
+ * Engine value encoding (grafeo 0.6):
+ *   node:    {_id, _labels, ...properties}
+ *   vector:  Array (server, Python) or Float32Array (WASM)
+ *   decimal: {$decimal: "1.50"} (WASM), a GQL number with a point such as
+ *            `RETURN 0.5 AS score`; it becomes a number, as in Python
  *   unaliased columns are named after their expression: `n.embedding`, `id(n)`
  *
  * Coordinates come from explicit x/y/z fields when present, otherwise from the
@@ -29,12 +31,33 @@ export function grafeoColumnKey(column) {
   return column;
 }
 
-/** Make a value safe to sync to Python as JSON (typed arrays and BigInt are not). */
+function isGrafeoDecimal(val) {
+  return isGrafeoPlainObject(val) && typeof val.$decimal === "string" && Object.keys(val).length === 1;
+}
+
+function isGrafeoPlainObject(val) {
+  if (val === null || typeof val !== "object") return false;
+  const proto = Object.getPrototypeOf(val);
+  return proto === Object.prototype || proto === null;
+}
+
+/**
+ * Make a value safe to sync to Python as JSON (typed arrays and BigInt are not),
+ * and turn engine decimals into numbers, also inside lists and maps.
+ */
 function grafeoPlainValue(val) {
   if (ArrayBuffer.isView(val) && !(val instanceof DataView)) return Array.from(val);
   if (typeof val === "bigint") {
     const num = Number(val);
     return Number.isSafeInteger(num) ? num : String(val);
+  }
+  if (Array.isArray(val)) return val.map(grafeoPlainValue);
+  if (isGrafeoDecimal(val)) {
+    const num = Number(val.$decimal);
+    return Number.isFinite(num) ? num : val.$decimal;
+  }
+  if (isGrafeoPlainObject(val)) {
+    return Object.fromEntries(Object.entries(val).map(([k, v]) => [k, grafeoPlainValue(v)]));
   }
   return val;
 }
