@@ -22,16 +22,16 @@ classifiers = [
 ]
 
 dependencies = [
-    "anywidget>=0.9.21",
+    "anywidget>=0.11.0",
 ]
 
 [project.optional-dependencies]
 dev = [
-    "prek>=0.3",
-    "pytest>=9.0.2",
-    "ruff>=0.15",
-    "ty>=0.0",
-    "marimo>=0.20",
+    "prek>=0.5.7",
+    "pytest>=9.2",
+    "ruff>=0.17.3",
+    "ty>=0.0.94",
+    "marimo>=0.25.2",
     # The test suite includes contract tests against the Grafeo engine
     "grafeo>=0.6.0,<0.7",
     "numpy>=1.24",
@@ -41,7 +41,8 @@ dev = [
 pandas = ["pandas>=2.0"]
 numpy = ["numpy>=1.24"]
 qdrant = ["qdrant-client>=1.0"]
-chroma = ["chromadb>=0.4"]
+# chromadb 1.5.9 has security issues; pinned until a fixed release
+chroma = ["chromadb==1.5.8"]
 pinecone = ["pinecone-client>=3.0"]
 weaviate = ["weaviate-client>=4.0"]
 lancedb = ["lancedb>=0.1"]
@@ -53,7 +54,7 @@ all = [
     "pandas>=3",
     "numpy>=2.4",
     "qdrant-client>=1",
-    "chromadb>=1.5",
+    "chromadb==1.5.8",
     "pinecone-client>=6.0",
     "weaviate-client>=4.20",
     "lancedb>=0.29.2",
@@ -108,6 +109,6 @@ repos = [
 
 [dependency-groups]
 dev = [
-    "pytest>=9.0.2",
-    "ruff>=0.15",
+    "pytest>=9.2",
+    "ruff>=0.17.3",
 ]
