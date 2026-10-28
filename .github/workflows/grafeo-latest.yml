@@ -1,0 +1,72 @@
+name: Grafeo Latest
+
+# Early warning for engine changes: runs the suite against the newest grafeo on
+# PyPI (pre-releases included, even outside the pinned range) and the browser
+# backend against the pinned and the newest @grafeo-db/wasm on npm.
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"  # Mondays 06:00 UTC
+  workflow_dispatch:
+
+jobs:
+  python:
+    name: Test with newest grafeo (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.13", "3.14", "3.15"]
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install uv and Python ${{ matrix.python-version }}
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          uv sync --extra dev
+          uv pip install --upgrade --prerelease allow grafeo
+
+      - name: Show grafeo build
+        run: uv run --no-sync python -c "import grafeo; print(grafeo.__version__); print(grafeo.build_info())"
+
+      - name: Run tests
+        run: uv run --no-sync pytest
+
+  wasm:
+    name: WASM smoke test (${{ matrix.release }} @grafeo-db/wasm)
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        release: [pinned, newest]
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+
+      - name: Resolve version
+        id: version
+        run: |
+          if [ "${{ matrix.release }}" = "pinned" ]; then
+            version=$(sed -n 's/^export const GRAFEO_WASM_VERSION = "\(.*\)";$/\1/p' src/anywidget_vector/backends/grafeo/embed.js)
+          else
+            version=$(npm view @grafeo-db/wasm versions --json | node -e 'const v = JSON.parse(require("fs").readFileSync(0, "utf8")); console.log([].concat(v).pop())')
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Download @grafeo-db/wasm@${{ steps.version.outputs.version }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/wasm"
+          cd "$RUNNER_TEMP/wasm"
+          npm pack "@grafeo-db/wasm@${{ steps.version.outputs.version }}"
+          tar -xzf grafeo-db-wasm-*.tgz
+
+      - name: Run smoke test
+        run: node tests/js/wasm_smoke.mjs "$RUNNER_TEMP/wasm/package"

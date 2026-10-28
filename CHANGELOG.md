@@ -1,5 +1,51 @@
 # Changelog
 
+## 0.4.0 (2026-10-28)
+
+Requires Python 3.12 or later; the Grafeo backend requires grafeo 0.6. See "Upgrading to 0.4" in the README.
+
+### Breaking
+
+- **Grafeo 0.6**: The `grafeo` extra requires `grafeo>=0.6.0,<0.7`; grafeo 0.5.x is no longer supported. Grafeo 0.6 changes query results and files, and these reach the widget's Grafeo backend:
+  - Every database is a single file. The first read-write open of a 0.5.x database migrates it and keeps the old file as `<file>.pre-0.6`, which 0.5.x needs to go back; opening a directory that is not a 0.5.x database fails
+  - A GQL number with a point is an exact decimal, so `0.0/0.0` and `1/0` fail the query (division by zero) where they gave NaN or null, and so does integer overflow. Use exponent literals (`0.0e0/0.0e0`) for IEEE floats
+  - A `WHERE` right after `INSERT`, `CREATE`, `MERGE` or `DELETE` is an error, and an `INSERT` alone returns no rows, so running one from the toolbar clears the scene
+  - GQL `ORDER BY` puts nulls last in both directions
+- **Theme follows the page until you choose**: `dark_mode` reports the theme in use. The widget follows the host page until a theme is chosen (`VectorSpace(dark_mode=...)`, `widget.dark_mode = ...` before or after display, even to the value it already reports, or the settings toggle) and then keeps the choice, also in later views; before, the page theme overwrote `dark_mode` passed from Python, and the widget stopped following the page after its first automatic change. The canvas `background` follows the theme unless chosen the same way; before, the theme overwrote it. Same contract as anywidget-graph and anywidget-archimate (`_theme_explicit`, `_background_explicit`)
+- **Compact toolbar in a narrow widget**: The toolbar tightens when the widget itself is narrower than 600 px (a container query), not only when the window is narrow, as in anywidget-graph. Panels over the canvas (window narrower than 768 px) now cover the canvas's zoom and selection controls instead of sitting under them
+- **WASM engine 0.6**: The browser-side Grafeo backend loads `@grafeo-db/wasm` 0.6.0 (was 0.5.0 in 0.3.2) from jsDelivr. The version is set once, `GRAFEO_WASM_VERSION` in `backends/grafeo/embed.js`, and a test keeps it in lockstep with the Python pin (npm and PyPI spellings of a pre-release, such as `0.6.1-rc.2` and `0.6.1rc2`, compare as the same version)
+
+### Improvements
+
+- **Decimals become numbers**: Grafeo 0.6 returns decimals (`decimal.Decimal` in Python, `{"$decimal": "1.50"}` in WASM). The widget turns them into floats in every Grafeo mode, also inside lists, maps and node properties, so `RETURN 0.5 AS score` maps to color and size, `1.5 AS x` places a point, and a plain list `[1.0, 0.0, 0.0]` still gives a vector. Without this, Python points could not be sent to the browser as JSON and WASM points landed at the origin
+- **Vector search errors**: A query vector of the wrong size or with NaN is a regular `grafeo.GrafeoError` in Grafeo 0.6 (0.5.44 panicked, and its WASM build trapped), shown in the widget with the sizes it names. The panic guard stays for any other engine bug
+- **Three.js 0.186.1, bundled**: The widget and `to_html()` use Three.js 0.186.1 (was 0.160.0 from esm.sh), bundled with the package (`ui/vendor/three.min.js` with its license, built by `scripts/vendor`), so both work offline and under a strict Content Security Policy. Only the `wasm` Grafeo mode loads code from a CDN. Three.js dropped WebGL 1 in 0.163, so a browser needs WebGL 2
+- **Theme detection**: A `data-theme="dark"` or `"light"` on the widget's closest ancestor wins, then on `<html>` and `<body>`, then a `dark` or `light` class, then the operating system. `data-theme="light"` no longer loses to a dark operating system, and other `data-theme` values (design-system names) are ignored
+- **Release safety**: The PyPI workflow runs the full CI suite first and stops when the release tag is not `v` plus the `pyproject.toml` version. CI also runs on `release/**` and `support/**` branches
+- **Credentials documented**: The README says where backend credentials end up (the browser and saved notebook widget state) and how to limit that
+- **Dependencies**: Requires anywidget 0.11 or later (was 0.9.21). The `chroma` and `all` extras pin `chromadb==1.5.8`, because 1.5.9 has security issues. All locked dependencies refreshed (`uv lock --upgrade`), and the dev tools need current releases (pytest 9.2, ruff 0.17.3, ty 0.0.94, prek 0.5.7, marimo 0.25.2); the `dev` extra includes grafeo, numpy and packaging so the full test suite runs everywhere. CI and the release workflow use uv (`uv lock --check`, `uv sync --locked`, `uv build`) and current GitHub Actions (checkout v7, setup-uv v10.3.3 pinned by commit since setup-uv publishes no moving major tag, setup-node v7, upload-artifact v7, download-artifact v8). The `tool.uv.dev-dependencies` table moved to `[dependency-groups]`, and ruff leaves Markdown files alone
+- **Engine contract tests**: The tests that pin Grafeo behavior now cover 0.6: error classes and messages for unknown metrics, zero dimensions, wrong-size and NaN query vectors and NaN in an indexed vector, filter operators (`$in`, `$ne`), tied distances, decimal literals and an `INSERT` without rows. `tests/js/wasm_smoke.mjs` checks decimals and the wrong-size error in WASM
+- **Same points in every Grafeo mode**: Embedded, server and WASM results go through the same rules: node values (`RETURN n`) contribute their properties, labels and id, unaliased columns such as `n.embedding` or `id(n)` are recognized, and explicit `x`/`y`/`z` win over the first vector components
+- **Server errors**: grafeo-server error responses show their `detail` text instead of raw JSON
+- **Scheduled engine check**: A weekly workflow runs the suite against the newest grafeo on PyPI (pre-releases included) and a smoke test against the pinned and the newest `@grafeo-db/wasm`
+- **Python 3.15**: Tested on Python 3.15; CI runs the suite on 3.12 to 3.15 and the classifiers list 3.12 to 3.15
+
+### Bug Fixes
+
+- **Embedded Grafeo queries**: Queries failed with "'QueryBuilder' object is not iterable" because the client called `GrafeoDB.query()`, which returns a query builder. It now calls `execute()`
+- **WASM mode**: `@grafeo-db/wasm` is published for bundlers since 0.5.x, so importing it from esm.sh no longer yields a working `Database`. The loader now imports the JS glue and instantiates the binary itself. WASM vectors (`Float32Array`) are converted to arrays, so they place points and sync to Python
+- **Engine panics**: A Grafeo panic (for example a vector search with the wrong number of dimensions) escaped the query callback because pyo3 raises it as a `BaseException`. It is now reported as a query error
+- **Query status**: A Python-side query with an empty result left the status at "connecting" and kept the old points. The result now replaces the points and the status becomes "connected"; a new query clears the previous error
+- **NaN and infinity in points**: These values are not valid JSON and one NaN coordinate broke camera framing for the whole scene. Top-level non-finite values are now replaced with `None` (with a `RuntimeWarning`), and distance and focus methods treat `None` coordinates as 0
+- **HTML injection**: Point labels and values from a database were inserted as HTML in the tooltip, the properties panel and the exported HTML page. They are now set as text. `to_html()` also escapes the title and keeps a `</script>` inside the data from ending the script
+- **Vector edge cases**: `add_numpy()` with a single high-dimensional row, a 1-D or one-column array, or ids/labels/metadata of the wrong length raised an unrelated `IndexError`; it now works (single row) or raises a clear `ValueError`. `project()` handles a single point and reports ragged or non-finite vectors clearly. `compute_distances(vector_field=...)` leaves out points without that vector instead of returning infinity, and raises on vectors of different lengths instead of truncating them
+- **Version**: `anywidget_vector.__version__` reported 0.2.5; it now reads the installed package version
+- **Removed views kept running**: A removed or re-rendered widget kept its model listeners, its theme observers and its dark-mode media listener, so old views went on updating `dark_mode` and `background`. Removing a view now detaches all of them
+- **WASM engine loaded twice**: Two copies of the widget module on one page (a cell run again, a marimo reconnect, anywidget-graph next to it) each instantiated the cached `@grafeo-db/wasm` glue, which broke the databases of the first copy. The loading promise now lives on `globalThis`, keyed by the glue URL
+- **Stale query results**: A slower, older browser-side query could overwrite the result of a newer one. Only the newest query per widget now sets points, errors and the loading state
+- **HTML export sizes**: `to_html(width=..., height=...)` placed the values in the page's `<style>` unchecked; a value that is not a plain CSS size now raises `ValueError`
+- **Source distribution**: A local `uv build` packed the `.claude/` folder (agent notes and local settings) into the sdist; it is now excluded
+
 ## 0.3.2 (2026-03-16)
 
 ### Improvements

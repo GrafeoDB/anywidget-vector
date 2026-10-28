@@ -1,6 +1,6 @@
 // 3D Canvas component using Three.js
-import * as THREE from "https://esm.sh/three@0.160.0";
-import { OrbitControls } from "https://esm.sh/three@0.160.0/addons/controls/OrbitControls.js";
+import * as THREE from "https://esm.sh/three@0.186.1";
+import { OrbitControls } from "https://esm.sh/three@0.186.1/addons/controls/OrbitControls.js";
 import { COLOR_SCALES, CATEGORICAL_COLORS } from "./constants.js";
 
 // Shape geometries factory
@@ -663,14 +663,27 @@ export function createCanvas(model, container, callbacks) {
   function showTooltip(event, point) {
     if (!model.get("show_tooltip")) return;
     const fields = model.get("tooltip_fields") || ["label", "x", "y", "z"];
-    let html = "";
-    if (point.label) html += `<div class="avs-tooltip-label">${point.label}</div>`;
+    // Point data can come from a database: textContent only, never markup
+    const children = [];
+    if (point.label) {
+      const labelEl = document.createElement("div");
+      labelEl.className = "avs-tooltip-label";
+      labelEl.textContent = String(point.label);
+      children.push(labelEl);
+    }
     fields.filter(f => f !== "label" && point[f] !== undefined).forEach(f => {
-      let value = point[f];
-      if (typeof value === "number") value = value.toFixed(3);
-      html += `<div class="avs-tooltip-row"><span class="avs-tooltip-key">${f}:</span><span>${value}</span></div>`;
+      const value = point[f];
+      const row = document.createElement("div");
+      row.className = "avs-tooltip-row";
+      const keyEl = document.createElement("span");
+      keyEl.className = "avs-tooltip-key";
+      keyEl.textContent = f + ":";
+      const valueEl = document.createElement("span");
+      valueEl.textContent = typeof value === "number" ? value.toFixed(3) : String(value);
+      row.append(keyEl, valueEl);
+      children.push(row);
     });
-    tooltip.innerHTML = html;
+    tooltip.replaceChildren(...children);
     tooltip.style.display = "block";
     const rect = container.getBoundingClientRect();
     tooltip.style.left = (event.clientX - rect.left + 15) + "px";

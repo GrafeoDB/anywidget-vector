@@ -1,7 +1,12 @@
 /**
  * Grafeo Server browser-side client for vector queries.
  * Mirrors the qdrant/client.js pattern.
+ *
+ * grafeo-server API: POST /query with {query, language, database} returns
+ * {columns: string[], rows: any[][]}; errors return {error, detail}.
+ * The server sends no CORS headers unless started with --cors-origins.
  */
+import { grafeoRowToPoint } from "./points.js";
 
 /**
  * Execute a query against Grafeo server.
@@ -29,7 +34,14 @@ export async function executeQuery(query, config) {
 
   if (!resp.ok) {
     const errText = await resp.text();
-    throw new Error("Grafeo error: " + (errText || resp.status));
+    let message = errText;
+    try {
+      const errBody = JSON.parse(errText);
+      message = errBody.detail || errBody.error || errText;
+    } catch (_) {
+      // not JSON, keep the raw text
+    }
+    throw new Error("Grafeo error: " + (message || resp.status));
   }
 
   return await resp.json();
@@ -39,52 +51,14 @@ export async function executeQuery(query, config) {
  * Convert Grafeo server result to points array.
  */
 export function toPoints(response) {
-  const points = [];
-  const columns = response.columns || [];
-  const rows = response.rows || response.data || [];
+  const columns = response?.columns || [];
+  const rows = response?.rows || response?.data || [];
 
-  for (let i = 0; i < rows.length; i++) {
-    const row = Array.isArray(rows[i]) ? rows[i] : columns.map((c) => rows[i][c]);
-    const point = { id: `point_${i}` };
-
-    for (let c = 0; c < columns.length && c < row.length; c++) {
-      const col = columns[c];
-      const val = row[c];
-
-      if (col === "id" || col === "ID") {
-        point.id = String(val);
-      } else if (col === "vector" || col === "embedding" || col === "embeddings") {
-        const vec = Array.isArray(val) ? val : [];
-        point.x = vec[0] ?? 0;
-        point.y = vec[1] ?? 0;
-        point.z = vec[2] ?? 0;
-        point.vector = vec;
-      } else if (col === "x" || col === "y" || col === "z") {
-        point[col] = typeof val === "number" ? val : parseFloat(val) || 0;
-      } else if (val !== null && val !== undefined) {
-        // Handle nested node objects
-        if (typeof val === "object" && val.properties) {
-          Object.assign(point, val.properties);
-          if (val.id !== undefined) point.id = String(val.id);
-          if (val.properties?.vector) {
-            const vec = val.properties.vector;
-            point.x = vec[0] ?? point.x ?? 0;
-            point.y = vec[1] ?? point.y ?? 0;
-            point.z = vec[2] ?? point.z ?? 0;
-            point.vector = vec;
-          }
-        } else {
-          point[col] = val;
-        }
-      }
-    }
-
-    // Default coordinates if not set
-    point.x = point.x ?? 0;
-    point.y = point.y ?? 0;
-    point.z = point.z ?? 0;
-    points.push(point);
-  }
-
-  return points;
+  return rows.map((row, i) => {
+    const values = Array.isArray(row) ? row : columns.map((c) => row?.[c]);
+    return grafeoRowToPoint(
+      columns.map((col, c) => [col, values[c]]),
+      i,
+    );
+  });
 }

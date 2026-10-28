@@ -10,7 +10,7 @@ Works with Marimo, Jupyter, VS Code, Colab, anywhere [anywidget](https://anywidg
 
 - **Universal**: One widget, every notebook environment
 - **6D Visualization**: X, Y, Z position + Color, Shape, Size encoding
-- **Backend-agnostic**: NumPy, pandas, Qdrant, Chroma, Pinecone, Weaviate, LanceDB, or raw dicts
+- **Backend-agnostic**: NumPy, pandas, Grafeo, Qdrant, Chroma, Pinecone, Weaviate, LanceDB, or raw dicts
 - **Interactive**: Orbit, pan, zoom, click, hover, box select
 - **Customizable**: Color scales, shapes, sizes, themes
 - **Performant**: Instanced rendering for large point clouds
@@ -19,7 +19,11 @@ Works with Marimo, Jupyter, VS Code, Colab, anywhere [anywidget](https://anywidg
 
 ```bash
 uv add anywidget-vector
+uv add "anywidget-vector[grafeo]"   # with the embedded Grafeo backend (grafeo 0.6)
 ```
+
+Requires Python 3.12 or later. The `grafeo` extra installs grafeo 0.6 (`grafeo>=0.6.0,<0.7`); the browser-side WASM mode loads the matching `@grafeo-db/wasm` from a CDN. Upgrading from 0.3 with Grafeo:
+see [Upgrading to 0.4](#upgrading-to-04).
 
 ## Quick Start
 
@@ -288,7 +292,8 @@ widget = VectorSpace(
     points=data,
     width=1000,
     height=700,
-    background="#1a1a2e",         # Dark theme default
+    dark_mode=None,               # None (default) follows the page theme; True or False fixes it
+    background=None,              # None (default) uses the theme's canvas color
     show_axes=True,
     show_grid=True,
     axis_labels={"x": "PC1", "y": "PC2", "z": "PC3"},
@@ -298,6 +303,16 @@ widget = VectorSpace(
     use_instancing=True,          # Performance: instanced rendering
 )
 ```
+
+### Theme
+
+The widget follows the theme of the page it is on: a `data-theme="dark"` or `"light"` on the widget's closest ancestor,
+then on `<html>` and `<body>`, then a `dark` or `light` class on `<html>` or `<body>`, then the operating system's
+dark-mode setting. It keeps following as the page changes. `dark_mode` reports the theme in use.
+
+A theme you choose stays: `VectorSpace(dark_mode=False)`, `widget.dark_mode = ...` before or after the widget is shown
+(also to the value it already reports), or the toggle in the settings panel. The canvas color follows the theme unless
+you choose a `background` the same way. anywidget-graph and anywidget-archimate behave the same.
 
 ## Backends
 
@@ -309,6 +324,96 @@ widget.set_backend("lancedb", client=table)
 widget.set_backend("grafeo", client=db)
 ```
 
+Type a query in the toolbar and press Run (or Enter). An empty result clears the scene; errors show in
+the settings panel.
+
+### Credentials
+
+Connection settings, including `apiKey`, `authToken`, `username` and `password` in `set_backend(...)` and the
+embedding key in the settings panel, are widget state: they reach the browser, which needs them for the browser-side
+backends (Qdrant, Pinecone, Weaviate, grafeo-server), and Jupyter saves them in the notebook file when it saves widget
+state. Use a read-only key with the narrowest scope the backend offers, keep it out of notebooks you share, or query
+from Python (`from_qdrant(...)`, `set_backend("chroma", client=...)` and the other Python-side clients keep their
+credentials in the kernel).
+
+### Grafeo
+
+[Grafeo](https://grafeo.dev/) is the default backend. It runs in three modes, set with
+`grafeo_connection_mode`:
+
+| Mode | Where queries run | Setup |
+|------|-------------------|-------|
+| `embedded` (default) | In Python, on a `grafeo.GrafeoDB` | `uv add "anywidget-vector[grafeo]"` and `set_backend("grafeo", client=db)` |
+| `server` | Over HTTP, `POST /query` on [grafeo-server](https://github.com/GrafeoDB/grafeo-server) | `grafeo_server_url="http://localhost:7474"`; start the server with `--cors-origins` so the notebook's origin may call it |
+| `wasm` | In the browser, in-memory | Nothing to install: `@grafeo-db/wasm` 0.6.0 loads from the jsDelivr CDN on the first query (the only code the widget loads from a CDN) |
+
+```python
+import grafeo
+from anywidget_vector import VectorSpace
+
+db = grafeo.GrafeoDB()
+db.create_node(["Doc"], {"title": "Graphs", "embedding": [0.9, 0.1, 0.0]})
+db.create_node(["Doc"], {"title": "Vectors", "embedding": [0.1, 0.9, 0.2]})
+db.create_vector_index("Doc", "embedding", metric="cosine")
+
+widget = VectorSpace(color_field="distance")
+widget.set_backend("grafeo", client=db)
+widget
+```
+
+A k-nearest-neighbor query for the toolbar (GQL, one statement per query):
+
+```
+CALL grafeo.search.vector('Doc', 'embedding', [1.0, 0.0, 0.0], 10) YIELD node_id, distance
+NEXT MATCH (n:Doc) WHERE id(n) = node_id RETURN n, distance ORDER BY distance
+```
+
+How results become points, the same in every mode:
+
+- A node (`RETURN n`) contributes its properties, its labels (`labels`) and its id (`id`).
+- An unaliased column is named after its expression (`n.embedding`), and the widget reads it as `embedding`.
+- The first of `vector`, `embedding` or `embeddings` becomes the point's `vector`; its first three components
+  are the coordinates unless the row also has `x`, `y` and `z`.
+- A GQL number with a point (`0.5`) is an exact decimal in Grafeo 0.6; the widget turns it into a float, also inside
+  lists and maps, so `RETURN 0.5 AS score` colors and sizes points like any other number.
+
+In `wasm` mode the database starts empty, so load data with one `INSERT` per query and create the index with
+`CREATE VECTOR INDEX doc_embedding ON :Doc(embedding) DIMENSION 3 METRIC 'cosine'`. Store embeddings
+as `vector([...])` there: a plain list is not indexed. An `INSERT` returns no rows, so it clears the scene; run a
+`MATCH` or a search afterwards to see the data.
+
+A query vector with another number of dimensions than the index, or with NaN, is a query error that names the
+sizes (for example "the query vector has 2 dimensions; the index on :Doc(embedding) expects 3"); the points stay
+as they were.
+
+The distance metrics of a Grafeo vector index (`cosine`, `euclidean`, `dot_product`, `manhattan`) give the
+same values as the widget's `distance_metric` and `compute_distances()`.
+
+The browser engine version is set in one place, `GRAFEO_WASM_VERSION` in
+`src/anywidget_vector/backends/grafeo/embed.js`, and moves in lockstep with the `grafeo` extra. Before a bump,
+run `node tests/js/wasm_smoke.mjs <unpacked @grafeo-db/wasm package>`.
+
+### Upgrading to 0.4
+
+0.4 moves the Grafeo backend to Grafeo 0.6, which changes some query results. What to check:
+
+- **Install**: the `grafeo` extra needs grafeo 0.6; `uv add "anywidget-vector[grafeo]"` upgrades it. The `wasm` mode
+  loads `@grafeo-db/wasm` 0.6 from the CDN by itself.
+- **Database files**: Grafeo 0.6 keeps every database in a single file. The first read-write open of a 0.5.x
+  database migrates it and keeps the old file as `<file>.pre-0.6`; 0.5.x cannot open the migrated file, so stop
+  every 0.5.x process first and keep the `.pre-0.6` copy until you no longer need to go back. Opening a directory that
+  is not a 0.5.x database fails: pass a file path, such as `data/vectors.grafeo`.
+- **Numbers with a point**: `0.1` is an exact decimal in GQL, so `0.0/0.0` and `1/0` now fail the query (division by
+  zero) instead of giving NaN or null, and integer overflow fails too. Write float literals with an exponent
+  (`0.0e0 / 0.0e0`) where you want IEEE results.
+- **Writes**: a `WHERE` right after `INSERT`, `CREATE`, `MERGE` or `DELETE` is an error; put the condition before the
+  write. An `INSERT` alone returns no rows.
+- **Ordering**: GQL `ORDER BY` puts nulls last in both directions; add `NULLS FIRST` for the old descending order.
+- **Errors**: a vector search with a query of the wrong size raises `grafeo.GrafeoError` (Grafeo 0.5.44 panicked);
+  the widget shows it as a query error either way.
+
+See Grafeo's [Upgrading to 0.6](https://grafeo.dev/upgrading/0.6/) for the full list.
+
 ## Export
 
 ```python
@@ -317,6 +422,13 @@ widget.to_html()                            # Self-contained HTML string
 widget.to_html(title="My Vectors")          # Custom title
 widget.save_html("vectors.html")            # Write HTML to file
 ```
+
+Three.js is bundled with the package (`ui/vendor/three.min.js`, built by `scripts/vendor`), so the widget and its
+HTML export work offline and under a strict Content Security Policy. Only the `wasm` Grafeo mode loads code from a
+CDN.
+
+NaN and infinity cannot travel as JSON, so the widget replaces them with `None` in point values (with a
+`RuntimeWarning`); a missing coordinate is drawn at 0.
 
 ## Environment Support
 

@@ -1,0 +1,15 @@
+{
+  "name": "anywidget-vector-vendor",
+  "private": true,
+  "description": "Builds src/anywidget_vector/ui/vendor/three.min.js: Three.js and OrbitControls, bundled instead of loaded from a CDN",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "dependencies": {
+    "three": "0.186.1"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2"
+  }
+}

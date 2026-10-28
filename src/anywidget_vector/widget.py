@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import html
 import json
 import math
+import re
+import warnings
 from typing import TYPE_CHECKING, Any
 
 import anywidget
@@ -13,9 +16,35 @@ from anywidget_vector.backends import is_python_backend
 from anywidget_vector.backends.chroma.client import execute_query as chroma_query
 from anywidget_vector.backends.grafeo.client import execute_query as grafeo_query
 from anywidget_vector.backends.lancedb.client import execute_query as lancedb_query
-from anywidget_vector.ui import get_css, get_esm
+from anywidget_vector.ui import get_css, get_esm, get_vendor_js
 
 if TYPE_CHECKING:
+    pass
+
+
+class _ChosenOnSet(traitlets.TraitType):
+    """A theme trait that records a choice in its `flag` trait whenever Python assigns it.
+
+    Assigning the value the trait already has counts too: `widget.dark_mode = True` on a dark page keeps the widget
+    dark after the page turns light. Values the widget writes from the browser arrive through `set_state` and are
+    not a choice.
+    """
+
+    def __init__(self, *args: Any, flag: str, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.flag = flag
+
+    def set(self, obj: Any, value: Any) -> None:
+        super().set(obj, value)
+        if not obj._applying_frontend_state:
+            obj.set_trait(self.flag, True)
+
+
+class _ChosenBool(_ChosenOnSet, traitlets.Bool):
+    pass
+
+
+class _ChosenUnicode(_ChosenOnSet, traitlets.Unicode):
     pass
 
 
@@ -37,10 +66,18 @@ class VectorSpace(anywidget.AnyWidget):
     # width=0 means "auto" (fill container). height=0 means "match width" (1:1 ratio).
     width = traitlets.Int(default_value=0).tag(sync=True)
     height = traitlets.Int(default_value=0).tag(sync=True)
-    background = traitlets.Unicode(default_value="#1a1a2e").tag(sync=True)
+    background = _ChosenUnicode(default_value="#1a1a2e", flag="_background_explicit").tag(sync=True)
 
     # === Theme ===
-    dark_mode = traitlets.Bool(default_value=True).tag(sync=True)
+    # dark_mode reports the current theme. The widget follows the host page until a theme is chosen: dark_mode
+    # set from Python (in the constructor, before or after display) or the settings toggle (shared with
+    # anywidget-graph and anywidget-archimate). Until a background is chosen the same way, the widget sets it
+    # to the theme's canvas color.
+    dark_mode = _ChosenBool(default_value=True, flag="_theme_explicit").tag(sync=True)
+    _theme_explicit = traitlets.Bool(default_value=False).tag(sync=True)
+    _background_explicit = traitlets.Bool(default_value=False).tag(sync=True)
+    # True while state from the browser is applied (see set_state)
+    _applying_frontend_state = False
 
     # === Axes and Grid ===
     show_axes = traitlets.Bool(default_value=True).tag(sync=True)
@@ -114,10 +151,23 @@ class VectorSpace(anywidget.AnyWidget):
     _demo_data = traitlets.Unicode(default_value="").tag(sync=True)
 
     def __init__(self, points: list[dict[str, Any]] | None = None, **kwargs: Any) -> None:
+        # None means "follow the page" (dark_mode) or "the theme's canvas color" (background), like leaving it out
+        for name in ("dark_mode", "background"):
+            if kwargs.get(name, ...) is None:
+                del kwargs[name]
         super().__init__(points=points or [], **kwargs)
         self._backend_client: Any = None
         self._vectors: Any = None  # High-dim vectors for projection (numpy array, not synced to JS)
         self.observe(self._on_execute_query, names=["_execute_query"])
+
+    def set_state(self, sync_data: dict[str, Any]) -> None:
+        """Apply state from the browser (Jupyter and marimo both call this): theme values it carries are the
+        widget following the page or a choice the browser already recorded, not a choice made in Python."""
+        self._applying_frontend_state = True
+        try:
+            super().set_state(sync_data)
+        finally:
+            self._applying_frontend_state = False
 
     # === Backend Configuration ===
 
@@ -139,16 +189,34 @@ class VectorSpace(anywidget.AnyWidget):
         self.show_settings = True
         return self
 
+    @traitlets.validate("points")
+    def _validate_points(self, proposal: dict[str, Any]) -> list[dict[str, Any]]:
+        """Replace NaN and infinity in top-level point values with None.
+
+        JSON cannot carry them (Jupyter sends the string "nan" instead) and a
+        single NaN coordinate breaks camera framing for the whole scene. The
+        frontend treats None like a missing value (coordinates default to 0).
+        Nested values such as ``vector`` lists are left as they are.
+        """
+        points, replaced = _replace_non_finite(proposal["value"])
+        if replaced:
+            warnings.warn(
+                f"{replaced} non-finite value(s) (NaN or infinity) in points were replaced with None",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+        return points
+
     def _on_execute_query(self, change: dict[str, Any]) -> None:
         """Handle query execution for Python-side backends."""
         if change["new"] == 0 or not is_python_backend(self.backend):
             return
         try:
+            self.query_error = None
             self.connection_status = "connecting"
-            results = self._execute_python_query()
-            if results:
-                self.points = results
-                self.connection_status = "connected"
+            # An empty result clears the scene, like the browser-side backends do
+            self.points = self._execute_python_query()
+            self.connection_status = "connected"
         except Exception as e:
             self.query_error = str(e)
             self.connection_status = "error"
@@ -253,19 +321,30 @@ class VectorSpace(anywidget.AnyWidget):
 
         Returns:
             Self for chaining.
+
+        Raises:
+            ValueError: if ``positions`` is not a 2-D array with at least 2 columns,
+                if a D > 3 array holds NaN or infinity (PCA cannot use them), or if
+                ``ids``, ``labels`` or a ``metadata`` list does not have one entry per row.
         """
         import numpy as np
 
-        arr = np.asarray(positions, dtype=np.float64)
+        arr = _as_matrix(positions, "positions")
         n_samples, n_dims = arr.shape
+        if n_dims < 2:
+            raise ValueError(f"positions needs at least 2 columns (x, y), got shape {arr.shape}")
+        _check_lengths(
+            n_samples,
+            {"ids": ids, "labels": labels, **{f"metadata[{k!r}]": v for k, v in (metadata or {}).items()}},
+        )
 
         # High-dimensional: store vectors and project to 3D
         if n_dims > 3:
+            coords = _pca(arr, n_components=3)  # validates before any state changes
             if self._vectors is not None:
                 self._vectors = np.vstack([self._vectors, arr])
             else:
                 self._vectors = arr
-            coords = _pca(arr, n_components=3)
         else:
             coords = arr
 
@@ -300,9 +379,7 @@ class VectorSpace(anywidget.AnyWidget):
         Returns:
             Self for chaining.
         """
-        import numpy as np
-
-        self._vectors = np.asarray(vectors, dtype=np.float64)
+        self._vectors = _as_matrix(vectors, "vectors")
         return self
 
     def project(self, method: str = "pca", *, n_components: int = 3, **kwargs: Any) -> VectorSpace:
@@ -321,7 +398,7 @@ class VectorSpace(anywidget.AnyWidget):
         Returns:
             Self for chaining.
         """
-        vectors = self._resolve_vectors()
+        vectors = _require_finite(self._resolve_vectors(), "vectors")
         n_components = min(n_components, vectors.shape[1])
 
         if method == "pca":
@@ -361,9 +438,14 @@ class VectorSpace(anywidget.AnyWidget):
             return self._vectors
 
         # Fall back to point["vector"] fields
-        vecs = [p.get("vector") for p in self.points]
-        if all(v is not None for v in vecs):
-            return np.array(vecs, dtype=np.float64)
+        vecs = [v for p in self.points if (v := p.get("vector")) is not None]
+        if vecs and len(vecs) == len(self.points):
+            if len(lengths := {len(v) for v in vecs}) > 1:
+                raise ValueError(
+                    f"Point 'vector' fields have different lengths ({sorted(lengths)}); "
+                    "projection needs one dimension for all points."
+                )
+            return _as_matrix(np.array(vecs, dtype=np.float64), "point vectors")
 
         raise ValueError(
             "No vectors available. Use set_vectors(), add_numpy() with D > 3, or ensure points have a 'vector' field."
@@ -607,17 +689,31 @@ class VectorSpace(anywidget.AnyWidget):
         Args:
             reference_id: ID of the reference point.
             metric: Distance metric (euclidean, cosine, manhattan, dot_product).
+                Same names and values as a Grafeo vector index with that metric.
             vector_field: Use a high-dimensional vector field instead of x/y/z.
+                Points without that field (or with an empty one) are left out.
+
+        Raises:
+            ValueError: if a point's ``vector_field`` has a different length than
+                the reference point's.
         """
         metric = metric or self.distance_metric
         ref = next((p for p in self.points if p.get("id") == reference_id), None)
         if not ref:
             return {}
-        return {
-            p.get("id"): self._distance(ref, p, metric, vector_field)
-            for p in self.points
-            if p.get("id") != reference_id
-        }
+        others = [p for p in self.points if p.get("id") != reference_id]
+        if vector_field:
+            # Points without the vector have no distance (previously infinity, which is not valid JSON)
+            if not _has_vector(ref.get(vector_field)):
+                return {}
+            others = [p for p in others if _has_vector(p.get(vector_field))]
+            dims = len(ref[vector_field])
+            if mismatched := [p.get("id") for p in others if len(p[vector_field]) != dims]:
+                raise ValueError(
+                    f"'{vector_field}' of {reference_id!r} has {dims} dimensions, "
+                    f"but these points differ: {mismatched[:5]}"
+                )
+        return {p.get("id"): self._distance(ref, p, metric, vector_field) for p in others}
 
     def find_neighbors(
         self, reference_id: str, k: int | None = None, threshold: float | None = None
@@ -647,14 +743,12 @@ class VectorSpace(anywidget.AnyWidget):
     def _distance(self, p1: dict, p2: dict, metric: str, vector_field: str | None = None) -> float:
         """Compute distance between two points."""
         if vector_field:
-            v1 = p1.get(vector_field, [])
-            v2 = p2.get(vector_field, [])
-            n = min(len(v1), len(v2))
-            if n == 0:
-                return float("inf")
+            v1 = p1[vector_field]
+            v2 = p2[vector_field]
+            n = len(v1)
         else:
-            v1 = [p1.get("x", 0), p1.get("y", 0), p1.get("z", 0)]
-            v2 = [p2.get("x", 0), p2.get("y", 0), p2.get("z", 0)]
+            v1 = [_coord(p1, "x"), _coord(p1, "y"), _coord(p1, "z")]
+            v2 = [_coord(p2, "x"), _coord(p2, "y"), _coord(p2, "z")]
             n = 3
 
         if metric == "euclidean":
@@ -693,9 +787,9 @@ class VectorSpace(anywidget.AnyWidget):
         """Focus camera on specific points."""
         pts = [p for p in self.points if p.get("id") in point_ids]
         if pts:
-            cx = sum(p.get("x", 0) for p in pts) / len(pts)
-            cy = sum(p.get("y", 0) for p in pts) / len(pts)
-            cz = sum(p.get("z", 0) for p in pts) / len(pts)
+            cx = sum(_coord(p, "x") for p in pts) / len(pts)
+            cy = sum(_coord(p, "y") for p in pts) / len(pts)
+            cz = sum(_coord(p, "z") for p in pts) / len(pts)
             self.camera_target = [cx, cy, cz]
             self.camera_position = [cx + 1.5, cy + 1.5, cz + 1.5]
 
@@ -713,8 +807,8 @@ class VectorSpace(anywidget.AnyWidget):
     ) -> str:
         """Generate a self-contained HTML string that renders the 3D visualization.
 
-        The output loads Three.js and OrbitControls from esm.sh CDN and embeds
-        the current points data plus visual settings. It renders a static 3D
+        The output embeds Three.js and OrbitControls (bundled with the package, so
+        the file works offline) plus the current points data and visual settings. It renders a static 3D
         point cloud with color/size mapping, orbit controls, optional axes and
         grid, and a hover tooltip. No toolbar, panels, query, or backend code
         is included.
@@ -726,6 +820,9 @@ class VectorSpace(anywidget.AnyWidget):
 
         Returns:
             A complete HTML document as a string.
+
+        Raises:
+            ValueError: If width or height is not a plain CSS value (such as ``600px``, ``100%`` or ``calc(...)``).
         """
         options = {
             "background": self.background,
@@ -739,11 +836,12 @@ class VectorSpace(anywidget.AnyWidget):
             "axis_labels": dict(self.axis_labels),
         }
         return _HTML_TEMPLATE.format(
-            title=title,
-            width=width,
-            height=height,
-            json_data=json.dumps(self.points),
-            json_options=json.dumps(options),
+            title=html.escape(title),
+            width=_css_value("width", width),
+            height=_css_value("height", height),
+            vendor_js=get_vendor_js(),
+            json_data=_json_for_script(self.points),
+            json_options=_json_for_script(options),
         )
 
     def save_html(self, path: str, **kwargs: Any) -> None:
@@ -792,8 +890,9 @@ body {{ margin: 0; overflow: hidden; font-family: sans-serif; }}
 <div id="container"></div>
 <div id="tooltip" class="tooltip"></div>
 <script type="module">
-import * as THREE from "https://esm.sh/three@0.160.0";
-import {{ OrbitControls }} from "https://esm.sh/three@0.160.0/examples/jsm/controls/OrbitControls.js";
+// Three.js and OrbitControls, bundled with anywidget-vector (licenses: ui/vendor/three.LICENSES.txt)
+{vendor_js}
+const {{ THREE, OrbitControls }} = anywidgetVectorVendor;
 
 const DATA = {json_data};
 const OPTIONS = {json_options};
@@ -1008,15 +1107,23 @@ container.addEventListener("mousemove", (event) => {{
     const idx = hit.object.userData.pointIndex;
     const point = DATA[idx];
     if (point) {{
-      let html = "";
-      if (point.label) html += '<div class="tooltip-label">' + point.label + "</div>";
+      // Point data can come from a database: build nodes with textContent, never markup
+      const node = (tag, cls, text) => {{
+        const el = document.createElement(tag);
+        if (cls) el.className = cls;
+        if (text !== undefined) el.textContent = text;
+        return el;
+      }};
+      const children = [];
+      if (point.label) children.push(node("div", "tooltip-label", String(point.label)));
       for (const [key, val] of Object.entries(point)) {{
         if (key === "label" || key === "vector") continue;
-        let display = val;
-        if (typeof val === "number") display = val.toFixed(3);
-        html += '<div class="tooltip-row"><span class="tooltip-key">' + key + ':</span><span>' + display + "</span></div>";
+        const row = node("div", "tooltip-row");
+        const display = typeof val === "number" ? val.toFixed(3) : String(val);
+        row.append(node("span", "tooltip-key", key + ":"), node("span", null, display));
+        children.push(row);
       }}
-      tooltipEl.innerHTML = html;
+      tooltipEl.replaceChildren(...children);
       tooltipEl.style.display = "block";
       tooltipEl.style.left = (event.clientX - rect.left + 15) + "px";
       tooltipEl.style.top = (event.clientY - rect.top + 15) + "px";
@@ -1085,17 +1192,93 @@ def _to_list(obj: Any) -> list[Any]:
     return list(obj)
 
 
+def _replace_non_finite(points: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], int]:
+    """Return points with top-level NaN/infinity floats set to None, and how many were replaced."""
+    replaced = 0
+    cleaned = points
+    for i, point in enumerate(points):
+        bad = [k for k, v in point.items() if isinstance(v, float) and not math.isfinite(v)]
+        if not bad:
+            continue
+        if cleaned is points:
+            cleaned = list(points)
+        cleaned[i] = {**point, **dict.fromkeys(bad)}
+        replaced += len(bad)
+    return cleaned, replaced
+
+
+_CSS_VALUE = re.compile(r"[#\w(),.%\s+*/-]+")
+
+
+def _css_value(name: str, value: str) -> str:
+    """A CSS value that cannot leave its declaration: no `;`, braces, quotes or `<`."""
+    if not _CSS_VALUE.fullmatch(value):
+        raise ValueError(f"{name} must be a plain CSS value such as '600px' or '100%', got {value!r}")
+    return value
+
+
+def _json_for_script(value: Any) -> str:
+    """JSON that is safe inside an inline <script>: a "</script>" in the data cannot end the element."""
+    return json.dumps(value).replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
+
+
+def _has_vector(value: Any) -> bool:
+    return value is not None and len(value) > 0
+
+
+def _coord(point: dict[str, Any], axis: str) -> Any:
+    """A coordinate, with missing or None (for example a replaced NaN) as 0, like the frontend."""
+    value = point.get(axis)
+    return 0 if value is None else value
+
+
+def _check_lengths(n_rows: int, columns: dict[str, Any]) -> None:
+    for name, values in columns.items():
+        if values is not None and len(values) != n_rows:
+            raise ValueError(f"{name} has {len(values)} entries, expected one per row ({n_rows})")
+
+
+def _as_matrix(values: Any, name: str) -> Any:
+    """Coerce to a 2-D float64 array with a clear error for ragged or 1-D input."""
+    import numpy as np
+
+    try:
+        arr = np.asarray(values, dtype=np.float64)
+    except ValueError as exc:
+        raise ValueError(f"{name} must be a 2-D array of numbers with equal-length rows: {exc}") from None
+    if arr.ndim != 2:
+        raise ValueError(f"{name} must be a 2-D array of shape (N, D), got shape {arr.shape}")
+    return arr
+
+
+def _require_finite(arr: Any, name: str) -> Any:
+    import numpy as np
+
+    if not np.isfinite(arr).all():
+        raise ValueError(f"{name} contain NaN or infinite values; projection needs finite numbers")
+    return arr
+
+
 # === Projection Helpers ===
 
 
 def _pca(vectors: Any, n_components: int = 3) -> Any:
-    """PCA via SVD (numpy only, no sklearn needed)."""
+    """PCA via SVD (numpy only, no sklearn needed).
+
+    Always returns ``n_components`` columns: with fewer samples than components
+    (for example a single vector) the missing components are zero.
+    """
     import numpy as np
 
-    x = np.asarray(vectors, dtype=np.float64)
+    x = _require_finite(np.asarray(vectors, dtype=np.float64), "vectors")
+    if len(x) == 0:
+        return np.zeros((0, n_components))
     x_centered = x - x.mean(axis=0)
     _u, _s, vt = np.linalg.svd(x_centered, full_matrices=False)
-    return x_centered @ vt[:n_components].T
+    coords = x_centered @ vt[:n_components].T
+    if coords.shape[1] < n_components:
+        coords = np.pad(coords, ((0, 0), (0, n_components - coords.shape[1])))
+    return coords
 
 
 def _tsne(vectors: Any, n_components: int = 3, **kwargs: Any) -> Any:
