@@ -2,9 +2,11 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, "release/**", "support/**"]
   pull_request:
     branches: [main]
+  # The release workflow runs the full suite before it publishes
+  workflow_call:
 
 jobs:
   lint:

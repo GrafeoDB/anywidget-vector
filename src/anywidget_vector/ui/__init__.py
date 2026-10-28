@@ -12,6 +12,11 @@ def _read_file(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
+def get_vendor_js() -> str:
+    """Three.js and OrbitControls, bundled (a script that sets ``anywidgetVectorVendor``; built by scripts/vendor)."""
+    return _read_file(_UI_DIR / "vendor" / "three.min.js")
+
+
 def get_css() -> str:
     """Get aggregated CSS."""
     return _read_file(_UI_DIR / "styles.css")
@@ -25,6 +30,7 @@ def get_esm() -> str:
     # Read component files
     icons_js = _read_file(_STATIC_DIR / "icons.js")
     constants_js = _read_file(_UI_DIR / "constants.js")
+    theme_js = _read_file(_UI_DIR / "theme.js")
     sidebar_js = _read_file(_UI_DIR / "sidebar.js")
     toolbar_js = _read_file(_UI_DIR / "toolbar.js")
     settings_js = _read_file(_UI_DIR / "settings.js")
@@ -34,14 +40,19 @@ def get_esm() -> str:
     # Build combined ESM
     esm = f"""
 // === Auto-generated ESM bundle for anywidget-vector ===
-import * as THREE from "https://esm.sh/three@0.186.1";
-import {{ OrbitControls }} from "https://esm.sh/three@0.186.1/addons/controls/OrbitControls.js";
+// Three.js and OrbitControls are bundled (vendor/three.min.js, licenses in vendor/three.LICENSES.txt): the widget
+// loads no code from a CDN, except the Grafeo WASM engine in WASM mode
+{get_vendor_js()}
+const {{ THREE, OrbitControls }} = anywidgetVectorVendor;
 
 // === Icons ===
 {_strip_imports_exports(icons_js)}
 
 // === Constants ===
 {_strip_imports_exports(constants_js)}
+
+// === Theme ===
+{_strip_imports_exports(theme_js)}
 
 {_backend_clients()}
 
@@ -61,7 +72,9 @@ import {{ OrbitControls }} from "https://esm.sh/three@0.186.1/addons/controls/Or
 {_strip_imports_exports(canvas_js)}
 
 // === Main Render Function ===
-function render({{ model, el }}) {{
+function render({{ model: widgetModel, el }}) {{
+  // Components see a model whose listeners are removed with the view
+  const model = trackModelListeners(widgetModel);
   const wrapper = document.createElement("div");
   wrapper.className = "avs-wrapper";
 
@@ -76,56 +89,8 @@ function render({{ model, el }}) {{
 
   el.appendChild(wrapper);
 
-  // Auto-detect host theme (Tailwind dark/dark-theme class, data-theme, or prefers-color-scheme)
-  function detectHostDark() {{
-    const html = document.documentElement;
-    if (html.classList.contains("dark") || html.classList.contains("dark-theme")) return true;
-    if (html.dataset.theme === "dark") return true;
-    if (document.body?.classList.contains("dark") || document.body?.classList.contains("dark-theme")) return true;
-    if (document.body?.dataset.theme === "dark") return true;
-    if (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) return true;
-    return false;
-  }}
-
-  function applyTheme(dark) {{
-    wrapper.classList.toggle("avs-dark", dark);
-    model.set("background", dark ? "#181c1a" : "#ffffff");
-    model.save_changes();
-  }}
-
-  // Always auto-detect and observe theme changes
-  let autoTheme = true;
-  model.set("dark_mode", detectHostDark());
-  applyTheme(detectHostDark());
-
-  const themeObserver = new MutationObserver(() => {{
-    if (!autoTheme) return;
-    const dark = detectHostDark();
-    if (model.get("dark_mode") !== dark) {{
-      model.set("dark_mode", dark);
-      applyTheme(dark);
-    }}
-  }});
-  themeObserver.observe(document.documentElement, {{ attributes: true, attributeFilter: ["class", "data-theme", "style"] }});
-  if (document.body) {{
-    themeObserver.observe(document.body, {{ attributes: true, attributeFilter: ["class", "data-theme", "style"] }});
-  }}
-  if (window.matchMedia) {{
-    window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {{
-      if (!autoTheme) return;
-      const dark = detectHostDark();
-      if (model.get("dark_mode") !== dark) {{
-        model.set("dark_mode", dark);
-        applyTheme(dark);
-      }}
-    }});
-  }}
-
-  // Manual toggle from settings panel disables auto-theme
-  model.on("change:dark_mode", () => {{
-    autoTheme = false;
-    applyTheme(model.get("dark_mode"));
-  }});
+  // Follows the page theme until the user chooses (theme.js)
+  const stopFollowingTheme = followHostTheme(model, el, (dark) => wrapper.classList.toggle("avs-dark", dark));
 
   let sidebar = null;
   let settingsPanel = null;
@@ -208,6 +173,8 @@ function render({{ model, el }}) {{
 
     if (!hasBackend) return;
 
+    // A slower, older query must not overwrite the result of a newer one
+    const ticket = startQuery(widgetModel);
     if (toolbarUI) toolbarUI.setLoading(true);
 
     try {{
@@ -217,6 +184,7 @@ function render({{ model, el }}) {{
 
       if (isBrowserSide) {{
         const points = await executeBackendQuery(model);
+        if (!isLatestQuery(widgetModel, ticket)) return;
         model.set("points", points);
         model.set("connection_status", "connected");
         model.save_changes();
@@ -225,16 +193,21 @@ function render({{ model, el }}) {{
         model.save_changes();
       }}
     }} catch (err) {{
+      if (!isLatestQuery(widgetModel, ticket)) return;
       model.set("query_error", err.message);
       model.set("connection_status", "error");
       model.save_changes();
       console.error("Query error:", err);
     }} finally {{
-      if (toolbarUI) toolbarUI.setLoading(false);
+      if (toolbarUI && isLatestQuery(widgetModel, ticket)) toolbarUI.setLoading(false);
     }}
   }}
 
-  return () => {{ canvas.cleanup(); }};
+  return () => {{
+    stopFollowingTheme();
+    model.offAll();
+    canvas.cleanup();
+  }};
 }}
 
 export default {{ render }};
@@ -274,6 +247,19 @@ def _backend_clients() -> str:
 
 // Grafeo WASM (embed)
 {_prepare_grafeo_embed(grafeo_embed)}
+
+// The newest browser-side query per model; results of older ones are dropped
+const latestQuery = new WeakMap();
+
+function startQuery(model) {{
+  const ticket = (latestQuery.get(model) ?? 0) + 1;
+  latestQuery.set(model, ticket);
+  return ticket;
+}}
+
+function isLatestQuery(model, ticket) {{
+  return latestQuery.get(model) === ticket;
+}}
 
 // Unified query executor
 async function executeBackendQuery(model) {{

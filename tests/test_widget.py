@@ -2,6 +2,8 @@
 
 import json
 
+import pytest
+
 from anywidget_vector import VectorSpace
 
 
@@ -521,7 +523,9 @@ class TestToHtml:
         assert "<title>Vector Visualization</title>" in html
         assert 'id="container"' in html
         assert 'id="tooltip"' in html
-        assert "three@0.186.1" in html
+        # Three.js is inlined, so the file works offline
+        assert "anywidgetVectorVendor" in html
+        assert "esm.sh" not in html
 
     def test_to_html_embeds_data(self):
         """Point data is serialized into the HTML."""
@@ -552,6 +556,20 @@ class TestToHtml:
         assert "900px" in html
         assert "500px" in html
 
+    @pytest.mark.parametrize("value", ["calc(100% - 2rem)", "80vh", "640px"])
+    def test_to_html_accepts_plain_css_sizes(self, value):
+        html = VectorSpace(points=[]).to_html(width=value, height=value)
+        assert f"width: {value}; height: {value};" in html
+
+    @pytest.mark.parametrize(
+        "value", ["100%; } </style><script>alert(1)</script>", "1px;background:url(x)", "{}", "'a'"]
+    )
+    def test_to_html_rejects_sizes_that_leave_the_declaration(self, value):
+        with pytest.raises(ValueError, match="plain CSS value"):
+            VectorSpace(points=[]).to_html(width=value)
+        with pytest.raises(ValueError, match="plain CSS value"):
+            VectorSpace(points=[]).to_html(height=value)
+
     def test_to_html_empty(self):
         """to_html() works on empty widget."""
         widget = VectorSpace()
@@ -568,7 +586,7 @@ class TestToHtml:
         assert out.exists()
         content = out.read_text(encoding="utf-8")
         assert "<title>Saved Vectors</title>" in content
-        assert "three@0.186.1" in content
+        assert "anywidgetVectorVendor" in content
 
 
 class TestToJson:

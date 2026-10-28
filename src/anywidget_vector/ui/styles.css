@@ -21,6 +21,8 @@
   position: relative;
   display: flex;
   flex-direction: column;
+  /* The toolbar fits the widget's own width (a host's narrow pane), not the window's: see @container avs below */
+  container: avs / inline-size;
 }
 
 /* Dark mode (matches marimo dark) */
@@ -486,7 +488,8 @@
     position: absolute;
     top: 0;
     bottom: 0;
-    z-index: 10;
+    /* Over the canvas's zoom and selection controls (25) and overlays (15, 16) */
+    z-index: 30;
   }
 
   .avs-panel-left {
@@ -504,7 +507,10 @@
   .avs-panel-inner {
     width: 280px;
   }
+}
 
+/* === Narrow widget (max-width: 600px): compact toolbar, as in anywidget-graph === */
+@container avs (max-width: 600px) {
   .avs-toolbar {
     padding: 6px 8px;
     gap: 4px;

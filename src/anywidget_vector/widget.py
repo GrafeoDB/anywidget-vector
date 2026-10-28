@@ -5,6 +5,7 @@ from __future__ import annotations
 import html
 import json
 import math
+import re
 import warnings
 from typing import TYPE_CHECKING, Any
 
@@ -15,9 +16,35 @@ from anywidget_vector.backends import is_python_backend
 from anywidget_vector.backends.chroma.client import execute_query as chroma_query
 from anywidget_vector.backends.grafeo.client import execute_query as grafeo_query
 from anywidget_vector.backends.lancedb.client import execute_query as lancedb_query
-from anywidget_vector.ui import get_css, get_esm
+from anywidget_vector.ui import get_css, get_esm, get_vendor_js
 
 if TYPE_CHECKING:
+    pass
+
+
+class _ChosenOnSet(traitlets.TraitType):
+    """A theme trait that records a choice in its `flag` trait whenever Python assigns it.
+
+    Assigning the value the trait already has counts too: `widget.dark_mode = True` on a dark page keeps the widget
+    dark after the page turns light. Values the widget writes from the browser arrive through `set_state` and are
+    not a choice.
+    """
+
+    def __init__(self, *args: Any, flag: str, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.flag = flag
+
+    def set(self, obj: Any, value: Any) -> None:
+        super().set(obj, value)
+        if not obj._applying_frontend_state:
+            obj.set_trait(self.flag, True)
+
+
+class _ChosenBool(_ChosenOnSet, traitlets.Bool):
+    pass
+
+
+class _ChosenUnicode(_ChosenOnSet, traitlets.Unicode):
     pass
 
 
@@ -39,10 +66,18 @@ class VectorSpace(anywidget.AnyWidget):
     # width=0 means "auto" (fill container). height=0 means "match width" (1:1 ratio).
     width = traitlets.Int(default_value=0).tag(sync=True)
     height = traitlets.Int(default_value=0).tag(sync=True)
-    background = traitlets.Unicode(default_value="#1a1a2e").tag(sync=True)
+    background = _ChosenUnicode(default_value="#1a1a2e", flag="_background_explicit").tag(sync=True)
 
     # === Theme ===
-    dark_mode = traitlets.Bool(default_value=True).tag(sync=True)
+    # dark_mode reports the current theme. The widget follows the host page until a theme is chosen: dark_mode
+    # set from Python (in the constructor, before or after display) or the settings toggle (shared with
+    # anywidget-graph and anywidget-archimate). Until a background is chosen the same way, the widget sets it
+    # to the theme's canvas color.
+    dark_mode = _ChosenBool(default_value=True, flag="_theme_explicit").tag(sync=True)
+    _theme_explicit = traitlets.Bool(default_value=False).tag(sync=True)
+    _background_explicit = traitlets.Bool(default_value=False).tag(sync=True)
+    # True while state from the browser is applied (see set_state)
+    _applying_frontend_state = False
 
     # === Axes and Grid ===
     show_axes = traitlets.Bool(default_value=True).tag(sync=True)
@@ -116,10 +151,23 @@ class VectorSpace(anywidget.AnyWidget):
     _demo_data = traitlets.Unicode(default_value="").tag(sync=True)
 
     def __init__(self, points: list[dict[str, Any]] | None = None, **kwargs: Any) -> None:
+        # None means "follow the page" (dark_mode) or "the theme's canvas color" (background), like leaving it out
+        for name in ("dark_mode", "background"):
+            if kwargs.get(name, ...) is None:
+                del kwargs[name]
         super().__init__(points=points or [], **kwargs)
         self._backend_client: Any = None
         self._vectors: Any = None  # High-dim vectors for projection (numpy array, not synced to JS)
         self.observe(self._on_execute_query, names=["_execute_query"])
+
+    def set_state(self, sync_data: dict[str, Any]) -> None:
+        """Apply state from the browser (Jupyter and marimo both call this): theme values it carries are the
+        widget following the page or a choice the browser already recorded, not a choice made in Python."""
+        self._applying_frontend_state = True
+        try:
+            super().set_state(sync_data)
+        finally:
+            self._applying_frontend_state = False
 
     # === Backend Configuration ===
 
@@ -759,8 +807,8 @@ class VectorSpace(anywidget.AnyWidget):
     ) -> str:
         """Generate a self-contained HTML string that renders the 3D visualization.
 
-        The output loads Three.js and OrbitControls from esm.sh CDN and embeds
-        the current points data plus visual settings. It renders a static 3D
+        The output embeds Three.js and OrbitControls (bundled with the package, so
+        the file works offline) plus the current points data and visual settings. It renders a static 3D
         point cloud with color/size mapping, orbit controls, optional axes and
         grid, and a hover tooltip. No toolbar, panels, query, or backend code
         is included.
@@ -772,6 +820,9 @@ class VectorSpace(anywidget.AnyWidget):
 
         Returns:
             A complete HTML document as a string.
+
+        Raises:
+            ValueError: If width or height is not a plain CSS value (such as ``600px``, ``100%`` or ``calc(...)``).
         """
         options = {
             "background": self.background,
@@ -786,8 +837,9 @@ class VectorSpace(anywidget.AnyWidget):
         }
         return _HTML_TEMPLATE.format(
             title=html.escape(title),
-            width=width,
-            height=height,
+            width=_css_value("width", width),
+            height=_css_value("height", height),
+            vendor_js=get_vendor_js(),
             json_data=_json_for_script(self.points),
             json_options=_json_for_script(options),
         )
@@ -838,8 +890,9 @@ body {{ margin: 0; overflow: hidden; font-family: sans-serif; }}
 <div id="container"></div>
 <div id="tooltip" class="tooltip"></div>
 <script type="module">
-import * as THREE from "https://esm.sh/three@0.186.1";
-import {{ OrbitControls }} from "https://esm.sh/three@0.186.1/examples/jsm/controls/OrbitControls.js";
+// Three.js and OrbitControls, bundled with anywidget-vector (licenses: ui/vendor/three.LICENSES.txt)
+{vendor_js}
+const {{ THREE, OrbitControls }} = anywidgetVectorVendor;
 
 const DATA = {json_data};
 const OPTIONS = {json_options};
@@ -1152,6 +1205,16 @@ def _replace_non_finite(points: list[dict[str, Any]]) -> tuple[list[dict[str, An
         cleaned[i] = {**point, **dict.fromkeys(bad)}
         replaced += len(bad)
     return cleaned, replaced
+
+
+_CSS_VALUE = re.compile(r"[#\w(),.%\s+*/-]+")
+
+
+def _css_value(name: str, value: str) -> str:
+    """A CSS value that cannot leave its declaration: no `;`, braces, quotes or `<`."""
+    if not _CSS_VALUE.fullmatch(value):
+        raise ValueError(f"{name} must be a plain CSS value such as '600px' or '100%', got {value!r}")
+    return value
 
 
 def _json_for_script(value: Any) -> str:

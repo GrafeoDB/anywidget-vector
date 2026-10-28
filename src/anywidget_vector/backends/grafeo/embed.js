@@ -10,7 +10,16 @@ export const GRAFEO_WASM_VERSION = "0.6.0";
 export const GRAFEO_WASM_CDN = `https://cdn.jsdelivr.net/npm/@grafeo-db/wasm@${GRAFEO_WASM_VERSION}`;
 
 let wasmDb = null;
-let wasmBindingsPromise = null;
+
+/**
+ * Where the page keeps the loading promise for one glue module. A page can hold several copies of the widget
+ * module (a cell run again, a marimo reconnect, anywidget-graph next to this widget), and they all get the same
+ * cached glue module from the browser. A second instantiation would hand that glue new memory and break every
+ * database the first one created, so the promise lives on globalThis, keyed by the glue URL alone.
+ */
+export function wasmBindingsKey(baseUrl) {
+  return Symbol.for(`grafeo-wasm:${baseUrl}/grafeo_wasm_bg.js`);
+}
 
 /**
  * Load the wasm-bindgen bindings once per page.
@@ -24,8 +33,9 @@ let wasmBindingsPromise = null;
  * `baseUrl` exists for tests/js/wasm_smoke.mjs, which loads a local package.
  */
 export function loadWasmBindings(baseUrl = GRAFEO_WASM_CDN) {
-  if (!wasmBindingsPromise) {
-    wasmBindingsPromise = (async () => {
+  const key = wasmBindingsKey(baseUrl);
+  if (!globalThis[key]) {
+    globalThis[key] = (async () => {
       const bindings = await import(`${baseUrl}/grafeo_wasm_bg.js`);
       const imports = { "./grafeo_wasm_bg.js": bindings };
       const wasmUrl = `${baseUrl}/grafeo_wasm_bg.wasm`;
@@ -41,11 +51,11 @@ export function loadWasmBindings(baseUrl = GRAFEO_WASM_CDN) {
       bindings.__wbg_set_wasm(instance.exports);
       return bindings;
     })().catch((err) => {
-      wasmBindingsPromise = null; // allow a retry after a network error
+      delete globalThis[key]; // allow a retry after a network error
       throw err;
     });
   }
-  return wasmBindingsPromise;
+  return globalThis[key];
 }
 
 /**

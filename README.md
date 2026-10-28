@@ -292,7 +292,8 @@ widget = VectorSpace(
     points=data,
     width=1000,
     height=700,
-    background="#1a1a2e",         # Dark theme default
+    dark_mode=None,               # None (default) follows the page theme; True or False fixes it
+    background=None,              # None (default) uses the theme's canvas color
     show_axes=True,
     show_grid=True,
     axis_labels={"x": "PC1", "y": "PC2", "z": "PC3"},
@@ -302,6 +303,16 @@ widget = VectorSpace(
     use_instancing=True,          # Performance: instanced rendering
 )
 ```
+
+### Theme
+
+The widget follows the theme of the page it is on: a `data-theme="dark"` or `"light"` on the widget's closest ancestor,
+then on `<html>` and `<body>`, then a `dark` or `light` class on `<html>` or `<body>`, then the operating system's
+dark-mode setting. It keeps following as the page changes. `dark_mode` reports the theme in use.
+
+A theme you choose stays: `VectorSpace(dark_mode=False)`, `widget.dark_mode = ...` before or after the widget is shown
+(also to the value it already reports), or the toggle in the settings panel. The canvas color follows the theme unless
+you choose a `background` the same way. anywidget-graph and anywidget-archimate behave the same.
 
 ## Backends
 
@@ -316,6 +327,15 @@ widget.set_backend("grafeo", client=db)
 Type a query in the toolbar and press Run (or Enter). An empty result clears the scene; errors show in
 the settings panel.
 
+### Credentials
+
+Connection settings, including `apiKey`, `authToken`, `username` and `password` in `set_backend(...)` and the
+embedding key in the settings panel, are widget state: they reach the browser, which needs them for the browser-side
+backends (Qdrant, Pinecone, Weaviate, grafeo-server), and Jupyter saves them in the notebook file when it saves widget
+state. Use a read-only key with the narrowest scope the backend offers, keep it out of notebooks you share, or query
+from Python (`from_qdrant(...)`, `set_backend("chroma", client=...)` and the other Python-side clients keep their
+credentials in the kernel).
+
 ### Grafeo
 
 [Grafeo](https://grafeo.dev/) is the default backend. It runs in three modes, set with
@@ -325,7 +345,7 @@ the settings panel.
 |------|-------------------|-------|
 | `embedded` (default) | In Python, on a `grafeo.GrafeoDB` | `uv add "anywidget-vector[grafeo]"` and `set_backend("grafeo", client=db)` |
 | `server` | Over HTTP, `POST /query` on [grafeo-server](https://github.com/GrafeoDB/grafeo-server) | `grafeo_server_url="http://localhost:7474"`; start the server with `--cors-origins` so the notebook's origin may call it |
-| `wasm` | In the browser, in-memory | Nothing to install: `@grafeo-db/wasm` 0.6.0 loads from the jsDelivr CDN on the first query |
+| `wasm` | In the browser, in-memory | Nothing to install: `@grafeo-db/wasm` 0.6.0 loads from the jsDelivr CDN on the first query (the only code the widget loads from a CDN) |
 
 ```python
 import grafeo
@@ -402,6 +422,10 @@ widget.to_html()                            # Self-contained HTML string
 widget.to_html(title="My Vectors")          # Custom title
 widget.save_html("vectors.html")            # Write HTML to file
 ```
+
+Three.js is bundled with the package (`ui/vendor/three.min.js`, built by `scripts/vendor`), so the widget and its
+HTML export work offline and under a strict Content Security Policy. Only the `wasm` Grafeo mode loads code from a
+CDN.
 
 NaN and infinity cannot travel as JSON, so the widget replaces them with `None` in point values (with a
 `RuntimeWarning`); a missing coordinate is drawn at 0.

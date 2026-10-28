@@ -20,7 +20,7 @@ import pytest
 from packaging.requirements import Requirement
 from packaging.version import Version
 
-from anywidget_vector.ui import _backend_clients, _strip_imports_exports, get_esm
+from anywidget_vector.ui import _backend_clients, _strip_imports_exports, get_esm, get_vendor_js
 from tests.support import NODE, run_node_module
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -43,15 +43,22 @@ def _wasm_version(esm: str) -> str:
 
 
 class TestBundleStructure:
-    def test_get_esm_only_three_imports_and_default_export(self, esm):
+    def test_get_esm_no_imports_and_only_default_export(self, esm):
         imports = [line for line in esm.splitlines() if line.lstrip().startswith("import ")]
         exports = [line for line in esm.splitlines() if line.lstrip().startswith("export ")]
-        assert all("https://esm.sh/three@0.186.1" in line for line in imports), imports
-        assert len(imports) == 2
+        assert imports == []
         assert exports == ["export default { render };"]
 
+    def test_the_module_loads_no_code_from_a_cdn(self, esm):
+        # Three.js is bundled; the only remote code is the Grafeo WASM engine, loaded in WASM mode
+        assert "https://esm.sh" not in esm
+        assert not re.search(r"""\bimport\s*(?:[\w{}*\s,]+from\s*)?["']https?://""", esm)
+        assert re.findall(r"https://cdn\.[\w./-]+", esm) == ["https://cdn.jsdelivr.net/npm/"]
+
     def test_get_esm_top_level_names_unique(self, esm):
-        names = TOP_LEVEL_FUNCTION.findall(esm) + TOP_LEVEL_BINDING.findall(esm)
+        # The vendored bundle is one `var` (its GLSL strings hold lines such as `const float ...`)
+        own = esm.replace(get_vendor_js(), "")
+        names = TOP_LEVEL_FUNCTION.findall(own) + TOP_LEVEL_BINDING.findall(own)
         duplicates = [name for name, count in Counter(names).items() if count > 1]
         assert duplicates == []
 
@@ -78,6 +85,10 @@ class TestBundleStructure:
             "createSidebar",
             "createSettingsPanel",
             "createPropertiesPanel",
+            "followHostTheme",
+            "trackModelListeners",
+            "startQuery",
+            "isLatestQuery",
             "render",
         ],
     )
@@ -272,7 +283,7 @@ class FakeDatabase {
   executeWithLanguage(q, lang) { log.push(["executeWithLanguage", q, lang]); return []; }
   free() { log.push(["free"]); }
 }
-wasmBindingsPromise = Promise.resolve({ Database: FakeDatabase });
+globalThis[wasmBindingsKey(GRAFEO_WASM_CDN)] = Promise.resolve({ Database: FakeDatabase });
 const before = grafeoEmbedIsConnected();
 await grafeoEmbedConnect();
 await grafeoEmbedExecuteQuery("MATCH (n) RETURN n", {});
@@ -327,6 +338,46 @@ console.log(JSON.stringify({{ ready: new bindings.Database().ready, same: bindin
         assert result["same"] is True
         assert set(result["fetched"]) == {result["base"] + "/grafeo_wasm_bg.wasm"}
 
+    def test_wasm_loaded_once_by_several_copies_of_the_module(self, tmp_path):
+        """A cell run again or anywidget-graph on the same page: one instantiation per glue module."""
+        pkg = tmp_path / "pkg"
+        pkg.mkdir()
+        (pkg / "package.json").write_text('{"type": "module"}', encoding="utf-8")
+        (pkg / "grafeo_wasm_bg.js").write_text(
+            "export let calls = 0;\nexport function __wbg_set_wasm() { calls += 1; }\n", encoding="utf-8"
+        )
+        for name in ("copy1.mjs", "copy2.mjs"):
+            (tmp_path / name).write_text(_backend_clients() + "\nexport { loadWasmBindings };\n", encoding="utf-8")
+        out = run_node_module(
+            f"""
+import {{ pathToFileURL }} from "node:url";
+const EMPTY_WASM = new Uint8Array([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]);
+globalThis.fetch = async () => new Response(EMPTY_WASM, {{ headers: {{ "content-type": "application/wasm" }} }});
+const first = await import("./copy1.mjs");
+const second = await import("./copy2.mjs");
+const base = pathToFileURL({json.dumps(str(pkg))}).href;
+const [a, b] = await Promise.all([first.loadWasmBindings(base), second.loadWasmBindings(base)]);
+console.log(JSON.stringify({{ same: a === b, calls: a.calls }}));
+""",
+            tmp_path,
+        )
+        assert json.loads(out) == {"same": True, "calls": 1}
+
+    def test_only_the_newest_query_per_model_counts(self, tmp_path):
+        out = run_node_module(
+            _backend_harness(
+                """
+const a = {}, b = {};
+const first = startQuery(a);
+const second = startQuery(a);
+const other = startQuery(b);
+console.log(JSON.stringify([isLatestQuery(a, first), isLatestQuery(a, second), isLatestQuery(b, other)]));
+"""
+            ),
+            tmp_path,
+        )
+        assert json.loads(out) == [False, True, True]
+
     def test_properties_row_renders_data_as_text(self, tmp_path):
         icons = _strip_imports_exports((PACKAGE / "static" / "icons.js").read_text(encoding="utf-8"))
         properties = _strip_imports_exports((PACKAGE / "ui" / "properties.js").read_text(encoding="utf-8"))
@@ -372,3 +423,37 @@ class TestNoMarkupFromPointData:
         sidebar = (PACKAGE / "ui" / "sidebar.js").read_text(encoding="utf-8")
         body = sidebar[sidebar.index("function addStatRow(") : sidebar.index("function rangeStr(")]
         assert "innerHTML" not in body
+
+
+class TestVendoredThree:
+    def test_vendor_bundle_is_inlined_once(self, esm):
+        assert esm.count(get_vendor_js()) == 1
+        assert "const { THREE, OrbitControls } = anywidgetVectorVendor;" in esm
+
+    def test_vendor_bundle_cannot_end_an_html_script(self):
+        # to_html() inlines it in a <script> element
+        assert "</script" not in get_vendor_js().lower()
+
+    def test_vendor_licenses_are_shipped(self):
+        licenses = (PACKAGE / "ui" / "vendor" / "three.LICENSES.txt").read_text(encoding="utf-8")
+        assert "== three@0.186.1 (MIT)" in licenses
+
+    @needs_node
+    def test_every_three_name_the_code_uses_is_bundled(self, tmp_path):
+        sources = [*(PACKAGE / "ui").glob("*.js"), PACKAGE / "widget.py"]
+        used = sorted({name for path in sources for name in re.findall(r"THREE\.(\w+)", path.read_text("utf-8"))})
+        out = run_node_module(
+            get_vendor_js()
+            + "\nconsole.log(JSON.stringify({ three: Object.keys(anywidgetVectorVendor.THREE),"
+            + " orbit: typeof anywidgetVectorVendor.OrbitControls }));",
+            tmp_path,
+        )
+        result = json.loads(out)
+        missing = sorted(set(used) - set(result["three"]))
+        assert missing == [], f"add {missing} to scripts/vendor/entry.mjs and run npm run build there"
+        assert result["orbit"] == "function"
+
+
+def test_sdist_leaves_out_local_agent_files():
+    hatch = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["tool"]["hatch"]["build"]
+    assert ".claude" in hatch["targets"]["sdist"]["exclude"]

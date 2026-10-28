@@ -15,11 +15,25 @@ on:
           - pypi
 
 jobs:
+  test:
+    name: Test
+    uses: ./.github/workflows/ci.yml
+
   build:
     name: Build distribution
+    needs: test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+
+      - name: Check the release tag matches the package version
+        if: github.event_name == 'release'
+        run: |
+          version=$(python3 -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")
+          if [ "$GITHUB_REF_NAME" != "v$version" ]; then
+            echo "Release tag $GITHUB_REF_NAME does not match the package version $version"
+            exit 1
+          fi
 
       - name: Install uv
         uses: astral-sh/setup-uv@v10

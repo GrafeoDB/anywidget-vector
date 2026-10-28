@@ -70,6 +70,10 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/anywidget_vector"]
 
+[tool.hatch.build.targets.sdist]
+# Local agent notes and settings; .gitignore files outside the repo are not the only guard
+exclude = [".claude"]
+
 [tool.ruff]
 line-length = 120
 target-version = "py312"
