@@ -22,7 +22,7 @@ uv add anywidget-vector
 uv add "anywidget-vector[grafeo]"   # with the embedded Grafeo backend (grafeo 0.6)
 ```
 
-Requires Python 3.12 or later. The `grafeo` extra installs grafeo 0.6 (`grafeo>=0.6.0,<0.7`); the browser-side WASM mode loads the matching `@grafeo-db/wasm` from a CDN. Upgrading from 0.3 with Grafeo:
+Requires Python 3.12 or later. The `grafeo` extra installs grafeo 0.6 (`grafeo>=0.6.2,<0.7`); the browser-side WASM mode loads the matching `@grafeo-db/wasm` from a CDN. Upgrading from 0.3 with Grafeo:
 see [Upgrading to 0.4](#upgrading-to-04).
 
 ## Quick Start
@@ -344,8 +344,8 @@ credentials in the kernel).
 | Mode | Where queries run | Setup |
 |------|-------------------|-------|
 | `embedded` (default) | In Python, on a `grafeo.GrafeoDB` | `uv add "anywidget-vector[grafeo]"` and `set_backend("grafeo", client=db)` |
-| `server` | Over HTTP, `POST /query` on [grafeo-server](https://github.com/GrafeoDB/grafeo-server) | `grafeo_server_url="http://localhost:7474"`; start the server with `--cors-origins` so the notebook's origin may call it |
-| `wasm` | In the browser, in-memory | Nothing to install: `@grafeo-db/wasm` 0.6.0 loads from the jsDelivr CDN on the first query (the only code the widget loads from a CDN) |
+| `server` | Over HTTP, `POST /query` on [grafeo-server](https://github.com/GrafeoDB/grafeo-server) | `grafeo_server_url="http://localhost:7474"`; start the server with `--cors-origins` so the notebook's origin may call it. Needs grafeo-server 0.6.0 or later (the Grafeo 0.6 engine, which sends decimals as `{"$decimal": "..."}`; the widget turns them into numbers) |
+| `wasm` | In the browser, in-memory | Nothing to install: `@grafeo-db/wasm` 0.6.2 loads from the jsDelivr CDN on the first query (the only code the widget loads from a CDN) |
 
 ```python
 import grafeo
