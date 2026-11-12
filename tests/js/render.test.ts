@@ -93,7 +93,7 @@ const DEFAULTS: Record<string, any> = {
   embedding_config: {},
 };
 
-async function mount(values: Record<string, any> = {}) {
+async function mount(values: Record<string, any> = {}, { noWebGL = false } = {}) {
   assert.ok(JSDOM, "jsdom is not installed (npm ci --prefix tests/js)");
   const dom = new JSDOM("<!DOCTYPE html><html><body></body></html>", { pretendToBeVisual: true });
   const { window } = dom;
@@ -113,12 +113,16 @@ async function mount(values: Record<string, any> = {}) {
     unobserve() {}
     disconnect() {}
   };
-  // The vendored Three.js (a classic script with a top-level var), evaluated in the global scope so it sees the
-  // jsdom window/document above and sets globalThis.anywidgetVectorVendor
-  (0, eval)(readFileSync(path.join(uiDir, "vendor", "three.min.js"), "utf8"));
+  // The vendored Three.js (a classic script with a top-level var), evaluated in the global scope so it sets
+  // globalThis.anywidgetVectorVendor. Once: the widget modules are imported once and keep the first THREE they
+  // see, so every mount's renderer stub goes on that same object
+  if (!g.anywidgetVectorVendor) (0, eval)(readFileSync(path.join(uiDir, "vendor", "three.min.js"), "utf8"));
   const vendor = g.anywidgetVectorVendor;
   // jsdom has no WebGL: the renderer stub owns a real canvas element, everything else is real Three.js
   vendor.THREE.WebGLRenderer = class {
+    constructor() {
+      if (noWebGL) throw new Error("Error creating WebGL context.");
+    }
     domElement = window.document.createElement("canvas");
     shadowMap: Record<string, unknown> = {};
     setSize() {}
@@ -131,8 +135,16 @@ async function mount(values: Record<string, any> = {}) {
   const model = fakeModel({ ...DEFAULTS, ...values });
   const el = window.document.createElement("div");
   window.document.body.appendChild(el);
-  const cleanup = widget.render({ model: model as any, el });
-  return { window, model, el, cleanup };
+  // render() throws when the canvas cannot be created; the test still gets the model to inspect
+  let cleanup = () => {};
+  let error: unknown = null;
+  try {
+    cleanup = widget.render({ model: model as any, el });
+  } catch (err) {
+    if (!noWebGL) throw err;
+    error = err;
+  }
+  return { window, model, el, cleanup, error };
 }
 
 test("renders the toolbar, sidebar, properties and a canvas", { skip }, async () => {
@@ -180,4 +192,29 @@ test("cleanup removes every model listener the view added", { skip }, async () =
   assert.ok(before > 0, "the view listens to model changes");
   cleanup();
   assert.equal(model.listenerCount(), 0, "offAll removed the listeners");
+});
+
+test("a failed canvas leaves no model listeners behind", { skip }, async () => {
+  const { model, error } = await mount({}, { noWebGL: true });
+  assert.ok(error, "render() throws without WebGL");
+  assert.equal(model.listenerCount(), 0, "the listeners added before the canvas were removed");
+});
+
+test("the Run button keeps loading until a Python-side query answers", { skip }, async () => {
+  // grafeo in embedded mode runs in Python: the view asks through _execute_query and Python sets the status
+  const { model, el, cleanup } = await mount({
+    backend: "grafeo",
+    grafeo_connection_mode: "embedded",
+    connection_status: "connected",
+    query_input: "MATCH (n) RETURN n",
+  });
+  const run = el.querySelector<HTMLButtonElement>(".avs-btn-primary")!;
+  run.click();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.ok(model.values._execute_query, "the query went to Python");
+  assert.ok(run.classList.contains("avs-loading"), "loading while Python runs the query");
+  model.values.connection_status = "connected";
+  model.emit("change:connection_status");
+  assert.ok(!run.classList.contains("avs-loading"), "loading ends when Python sets the status");
+  cleanup();
 });

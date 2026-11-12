@@ -1,7 +1,7 @@
 // The widget's ES module entry: assembles the panels and canvas and defines render(). Bundled by
 // scripts/build-esm.mjs into ui/dist/widget.js, which the Python side inlines after the vendored Three.js.
 
-import { BACKENDS } from "./constants.ts";
+import { backendInfo as lookupBackend } from "./constants.ts";
 import { followHostTheme, trackModelListeners } from "./theme.ts";
 import { createSidebar } from "./sidebar.ts";
 import { createToolbar } from "./toolbar.ts";
@@ -89,9 +89,17 @@ function render({ model: widgetModel, el }: { model: WidgetModel; el: HTMLElemen
   main.appendChild(propertiesPanel.element);
   if (model.get("show_properties")) propertiesPanel.open();
 
-  const canvas = createCanvas(model, canvasContainer, {
-    onHover: (point) => propertiesPanel?.setHoveredPoint(point),
-  });
+  let canvas: ReturnType<typeof createCanvas>;
+  try {
+    canvas = createCanvas(model, canvasContainer, {
+      onHover: (point) => propertiesPanel?.setHoveredPoint(point),
+    });
+  } catch (err) {
+    // No WebGL, for one: the view never returns its cleanup, so remove the listeners it already added
+    stopFollowingTheme();
+    model.offAll();
+    throw err;
+  }
 
   async function runQuery() {
     const query = model.get("query_input") || "";
@@ -104,7 +112,7 @@ function render({ model: widgetModel, el }: { model: WidgetModel; el: HTMLElemen
 
     // Additionally run a backend query if connected
     const backend = model.get("backend");
-    const backendInfo = BACKENDS[backend];
+    const backendInfo = lookupBackend(backend);
     const mode = model.get("grafeo_connection_mode") || "embedded";
     const status = model.get("connection_status");
 
@@ -117,6 +125,8 @@ function render({ model: widgetModel, el }: { model: WidgetModel; el: HTMLElemen
     // A slower, older query must not overwrite the result of a newer one
     const ticket = startQuery(widgetModel);
     if (toolbarUI) toolbarUI.setLoading(true);
+    // A Python-side query answers later: the Run button keeps loading until Python sets the final status
+    let pythonPending = false;
 
     try {
       model.set("query_error", null);
@@ -130,6 +140,13 @@ function render({ model: widgetModel, el }: { model: WidgetModel; el: HTMLElemen
         model.set("connection_status", "connected");
         model.save_changes();
       } else {
+        const onStatus = () => {
+          if (model.get("connection_status") === "connecting") return;
+          model.off("change:connection_status", onStatus);
+          if (toolbarUI && isLatestQuery(widgetModel, ticket)) toolbarUI.setLoading(false);
+        };
+        model.on("change:connection_status", onStatus);
+        pythonPending = true;
         model.set("_execute_query", Date.now());
         model.save_changes();
       }
@@ -140,7 +157,7 @@ function render({ model: widgetModel, el }: { model: WidgetModel; el: HTMLElemen
       model.save_changes();
       console.error("Query error:", err);
     } finally {
-      if (toolbarUI && isLatestQuery(widgetModel, ticket)) toolbarUI.setLoading(false);
+      if (!pythonPending && toolbarUI && isLatestQuery(widgetModel, ticket)) toolbarUI.setLoading(false);
     }
   }
 

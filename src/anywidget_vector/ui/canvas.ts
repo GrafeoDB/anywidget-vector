@@ -6,7 +6,7 @@ import type { OrbitControls as OrbitControlsType } from "three/addons/controls/O
 const mesh = (o: THREE_NS.Object3D): THREE_NS.Mesh => o as THREE_NS.Mesh;
 const mat = (o: THREE_NS.Object3D) => (o as THREE_NS.Mesh).material as THREE_NS.Material | undefined;
 
-import { COLOR_SCALES, CATEGORICAL_COLORS } from "./constants.ts";
+import { CATEGORICAL_COLORS, colorScale } from "./constants.ts";
 import { ICONS } from "../static/icons.ts";
 import type { CanvasCallbacks, PointData, WidgetModel } from "./types.ts";
 
@@ -36,21 +36,30 @@ interface CanvasOpts extends PointStyleOpts {
   shapeMap: Record<string, string>;
 }
 
-// Distance metrics
+// Distance metrics, over the drawn position (a missing or null coordinate is 0, where the point is drawn)
+const xyz = (p: PointData): [number, number, number] => [p.x ?? 0, p.y ?? 0, p.z ?? 0];
 const DISTANCE_METRICS: Record<string, (a: PointData, b: PointData) => number> = {
   euclidean: (a, b) => {
-    const dx = a.x - b.x, dy = a.y - b.y, dz = a.z - b.z;
+    const [ax, ay, az] = xyz(a), [bx, by, bz] = xyz(b);
+    const dx = ax - bx, dy = ay - by, dz = az - bz;
     return Math.sqrt(dx*dx + dy*dy + dz*dz);
   },
   cosine: (a, b) => {
-    const dot = a.x*b.x + a.y*b.y + a.z*b.z;
-    const magA = Math.sqrt(a.x*a.x + a.y*a.y + a.z*a.z);
-    const magB = Math.sqrt(b.x*b.x + b.y*b.y + b.z*b.z);
+    const [ax, ay, az] = xyz(a), [bx, by, bz] = xyz(b);
+    const dot = ax*bx + ay*by + az*bz;
+    const magA = Math.sqrt(ax*ax + ay*ay + az*az);
+    const magB = Math.sqrt(bx*bx + by*by + bz*bz);
     if (magA === 0 || magB === 0) return 1;
     return 1 - (dot / (magA * magB));
   },
-  manhattan: (a, b) => Math.abs(a.x - b.x) + Math.abs(a.y - b.y) + Math.abs(a.z - b.z),
-  dot_product: (a, b) => -(a.x*b.x + a.y*b.y + a.z*b.z),
+  manhattan: (a, b) => {
+    const [ax, ay, az] = xyz(a), [bx, by, bz] = xyz(b);
+    return Math.abs(ax - bx) + Math.abs(ay - by) + Math.abs(az - bz);
+  },
+  dot_product: (a, b) => {
+    const [ax, ay, az] = xyz(a), [bx, by, bz] = xyz(b);
+    return -(ax*bx + ay*by + az*bz);
+  },
 };
 
 export function createCanvas(model: WidgetModel, container: HTMLElement, callbacks: CanvasCallbacks): { cleanup: () => void; applyFilter: (filterText: string, hard: boolean) => { matched: number; total: number } } {
@@ -1055,7 +1064,7 @@ export function getPointSize(point: PointData, opts: PointStyleOpts): number {
 }
 
 function getColorFromScale(value: number, scaleName: string, domain: [number, number] | null): THREE_NS.Color {
-  const scale = COLOR_SCALES[scaleName] || COLOR_SCALES.viridis;
+  const scale = colorScale(scaleName);
   const [min, max] = domain || [0, 1];
   const range = max - min;
   // A domain whose ends are equal (all values the same) maps to the middle of the scale, not NaN

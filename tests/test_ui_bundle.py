@@ -360,6 +360,40 @@ console.log(JSON.stringify({ before, after: grafeoEmbedIsConnected(), log }));
             ["free"],
         ]
 
+    def test_pinecone_fetch_by_ids_encodes_ids_and_keeps_the_namespace(self, tmp_path):
+        client = json.dumps(_src_uri("backends", "pinecone", "client.ts"))
+        out = run_node_module(
+            f"""
+import {{ executeQuery }} from {client};
+const urls = [];
+globalThis.fetch = async (url) => {{ urls.push(url); return {{ ok: true, json: async () => ({{}}) }}; }};
+await executeQuery('{{"ids": ["a&b", "c#d"]}}', {{ url: "https://pc", apiKey: "k", namespace: "docs" }});
+console.log(JSON.stringify(urls));
+""",
+            tmp_path,
+        )
+        (url,) = json.loads(out)
+        assert url == "https://pc/vectors/fetch?ids=a%26b&ids=c%23d&namespace=docs"
+
+    def test_wasm_concurrent_connects_create_one_database(self, tmp_path):
+        out = run_node_module(
+            _backend_harness(
+                """
+let created = 0;
+class FakeDatabase { constructor() { created += 1; } free() {} }
+let release;
+const loaded = new Promise((resolve) => { release = () => resolve({ Database: FakeDatabase }); });
+globalThis[wasmBindingsKey(GRAFEO_WASM_CDN)] = loaded;
+const both = Promise.all([grafeoEmbedConnect(), grafeoEmbedConnect()]);
+release();
+await both;
+console.log(JSON.stringify({ created, connected: grafeoEmbedIsConnected() }));
+"""
+            ),
+            tmp_path,
+        )
+        assert json.loads(out) == {"created": 1, "connected": True}
+
     @pytest.mark.parametrize("content_type", ["application/wasm", "application/octet-stream"])
     def test_wasm_loader_wires_glue_and_binary(self, tmp_path, content_type):
         """The bundler-target wiring: import the glue, instantiate the binary, hand exports to the glue."""

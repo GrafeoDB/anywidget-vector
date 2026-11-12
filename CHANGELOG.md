@@ -9,6 +9,18 @@ Grafeo 0.6.2 release: the Grafeo backend moves to grafeo 0.6.2 in Python and in 
 - **Front end in TypeScript**: The widget loads `ui/dist/widget.js`, built by esbuild from the modules in `ui/` and `backends/` (`npm run build`), instead of the JavaScript modules joined as text. `to_html()` uses its own bundle, `ui/dist/export.js`, with the page template in `ui/export.html`.
 - **Release checks**: CI type-checks the front end with `tsc` (`npm run typecheck`), runs the JavaScript tests (`npm test`), and fails when a committed bundle is stale.
 - **grafeo-server version**: The README says the `server` Grafeo mode needs grafeo-server 0.6.0 or later, the Grafeo 0.6 engine, which sends decimals as `{"$decimal": "..."}` (the widget turns them into numbers).
+- **Exported pages draw points in one call**: `to_html()` and `save_html()` draw every point as an instance of one mesh instead of one mesh per point.
+
+### Fixed
+
+- **Exported point sizes match the widget**: `to_html()` scales `size_range` by the data extent, as the live view does.
+- **An exported single point is in view**: A page with one point, or with points that share a position, places the camera away from them instead of on them.
+- **The exported tooltip hides on leave**: Moving the pointer off an exported page hides the tooltip.
+- **Pinecone fetches by id keep the namespace**: A `{"ids": [...]}` query sends the configured `namespace` and encodes each id, so ids with `&` or `#` resolve.
+- **WASM mode creates one database**: Queries started while `@grafeo-db/wasm` loads share one database instead of each creating one.
+- **The Run button shows Python-side queries**: For backends that run in Python (Grafeo embedded, Chroma, LanceDB), the button stays in its loading state until the result arrives.
+- **A widget without WebGL leaves no listeners**: When the 3D canvas cannot be created, the view removes the model and theme listeners it had added.
+- **Neighbor names fall back to the id**: The sidebar's distance list shows the id for a point whose `label` is empty.
 
 ### Dependencies
 

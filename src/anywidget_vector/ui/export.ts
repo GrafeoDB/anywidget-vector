@@ -23,12 +23,20 @@ declare const OPTIONS: {
 // ---------------------------------------------------------------------------
 // Resolve options (the color/size helpers are the live widget's own, from canvas.ts)
 // ---------------------------------------------------------------------------
+// The data bounds: they fit the camera, and scale the point sizes the way the live canvas does (createPoints)
+const box = new THREE.Box3();
+DATA.forEach((p) => box.expandByPoint(new THREE.Vector3(p.x ?? 0, p.y ?? 0, p.z ?? 0)));
+// One point, or points that share a position, give an empty box: 1 keeps the sizes and the camera distance nonzero
+const dataSize = box.getSize(new THREE.Vector3()).length() || 1;
+const scaleFactor = dataSize / 10;
+const rawRange = OPTIONS.size_range || [0.02, 0.06];
+
 const opts: PointStyleOpts = {
   colorField: OPTIONS.color_field || null,
   colorScale: OPTIONS.color_scale || "viridis",
   colorDomain: OPTIONS.color_domain || null,
   sizeField: OPTIONS.size_field || null,
-  sizeRange: OPTIONS.size_range || [0.02, 0.1],
+  sizeRange: [rawRange[0] * scaleFactor, rawRange[1] * scaleFactor],
 };
 
 // Compute the color and size domains from the data when not explicitly set
@@ -109,24 +117,25 @@ const pointsGroup = new THREE.Group();
 scene.add(pointsGroup);
 
 if (DATA.length > 0) {
+  // One instanced mesh for every point: one geometry, one material and one draw call, whatever the point count
+  const geometry = new THREE.SphereGeometry(1, 16, 16);
+  const material = new THREE.MeshPhongMaterial({ color: 0xffffff });
+  const mesh = new THREE.InstancedMesh(geometry, material, DATA.length);
+  const matrix = new THREE.Matrix4();
   DATA.forEach((point, idx) => {
-    const geometry = new THREE.SphereGeometry(1, 16, 16);
-    const color = getPointColor(point, opts);
-    const material = new THREE.MeshPhongMaterial({ color });
-    const mesh = new THREE.Mesh(geometry, material);
     const size = getPointSize(point, opts);
-    mesh.scale.set(size, size, size);
-    mesh.position.set(point.x ?? 0, point.y ?? 0, point.z ?? 0);
-    mesh.userData = { pointIndex: idx, pointId: point.id || "point_" + idx };
-    pointsGroup.add(mesh);
+    matrix.makeScale(size, size, size).setPosition(point.x ?? 0, point.y ?? 0, point.z ?? 0);
+    mesh.setMatrixAt(idx, matrix);
+    mesh.setColorAt(idx, getPointColor(point, opts));
   });
+  mesh.instanceMatrix.needsUpdate = true;
+  if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+  mesh.computeBoundingSphere();
+  pointsGroup.add(mesh);
 
   // Auto-fit the camera to the data bounds
-  const box = new THREE.Box3();
-  DATA.forEach((p) => box.expandByPoint(new THREE.Vector3(p.x ?? 0, p.y ?? 0, p.z ?? 0)));
   const center = box.getCenter(new THREE.Vector3());
-  const bsize = box.getSize(new THREE.Vector3()).length();
-  const distance = bsize / (2 * Math.tan((Math.PI * camera.fov) / 360));
+  const distance = dataSize / (2 * Math.tan((Math.PI * camera.fov) / 360));
   controls.target.copy(center);
   camera.position.copy(center.clone().add(new THREE.Vector3(distance * 0.6, distance * 0.6, distance * 0.6)));
   controls.update();
@@ -148,9 +157,9 @@ container.addEventListener("mousemove", (event) => {
   const intersects = raycaster.intersectObjects(pointsGroup.children, true);
 
   if (intersects.length > 0) {
-    const hit = intersects[0];
-    const idx = hit.object.userData.pointIndex as number;
-    const point = DATA[idx];
+    // The instance under the pointer is the point's index in DATA
+    const idx = intersects[0].instanceId;
+    const point = idx === undefined ? undefined : DATA[idx];
     if (point) {
       // Point data can come from a database: build nodes with textContent, never markup
       const node = (tag: string, cls: string | null, text?: string) => {
@@ -176,6 +185,9 @@ container.addEventListener("mousemove", (event) => {
   } else {
     tooltipEl.style.display = "none";
   }
+});
+container.addEventListener("mouseleave", () => {
+  tooltipEl.style.display = "none";
 });
 
 // ---------------------------------------------------------------------------

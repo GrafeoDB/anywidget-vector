@@ -42,7 +42,8 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      # The ESM bundle tests parse and run the widget's JavaScript with Node
+      # The ESM bundle tests parse and run the widget's JavaScript with Node (the tsc, jsdom and stale-bundle
+      # checks need node_modules and skip here: the frontend job runs them once)
       - name: Set up Node.js
         uses: actions/setup-node@v7
         with:
@@ -51,21 +52,35 @@ jobs:
       - name: Install dependencies
         run: uv sync --locked --extra dev
 
-      # TypeScript and the type packages, so tsc can check every module in src/ and tests/js/
+      - name: Run tests
+        run: uv run --locked --extra dev pytest
+
+  frontend:
+    name: Front end
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+
+      # esbuild, TypeScript and the type packages, so tsc can check every module in src/ and tests/js/
       - name: Install the front-end dependencies
         run: npm ci --ignore-scripts
 
       - name: Install the JavaScript test dependencies
         run: npm ci --ignore-scripts --prefix tests/js
 
+      - name: Check that the committed bundles are built from the current sources
+        run: npm run check
+
       - name: Type-check the front end
         run: npm run typecheck
 
       - name: Run the JavaScript tests
         run: npm test
-
-      - name: Run tests
-        run: uv run --locked --extra dev pytest
 
   build:
     name: Build

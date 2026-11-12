@@ -48,6 +48,9 @@ var BACKENDS = {
     placeholder: 'category = "tech" AND year > 2020'
   }
 };
+function backendInfo(name) {
+  return Object.hasOwn(BACKENDS, name) ? BACKENDS[name] : void 0;
+}
 var COLOR_SCALES = {
   viridis: [[0.267, 4e-3, 0.329], [0.282, 0.14, 0.458], [0.253, 0.265, 0.53], [0.206, 0.371, 0.553], [0.163, 0.471, 0.558], [0.127, 0.566, 0.551], [0.134, 0.658, 0.518], [0.267, 0.749, 0.441], [0.478, 0.821, 0.318], [0.741, 0.873, 0.15], [0.993, 0.906, 0.144]],
   plasma: [[0.05, 0.03, 0.528], [0.254, 0.014, 0.615], [0.417, 1e-3, 0.658], [0.578, 0.015, 0.643], [0.716, 0.135, 0.538], [0.826, 0.268, 0.407], [0.906, 0.411, 0.271], [0.959, 0.567, 0.137], [0.981, 0.733, 0.106], [0.964, 0.903, 0.259], [0.94, 0.975, 0.131]],
@@ -56,6 +59,9 @@ var COLOR_SCALES = {
   cividis: [[0, 0.135, 0.304], [0, 0.179, 0.345], [0.117, 0.222, 0.36], [0.214, 0.263, 0.365], [0.293, 0.304, 0.37], [0.366, 0.345, 0.375], [0.437, 0.387, 0.382], [0.509, 0.429, 0.393], [0.582, 0.473, 0.409], [0.659, 0.52, 0.431], [0.739, 0.57, 0.461]],
   turbo: [[0.19, 0.072, 0.232], [0.254, 0.265, 0.53], [0.163, 0.471, 0.558], [0.134, 0.658, 0.518], [0.478, 0.821, 0.318], [0.741, 0.873, 0.15], [0.993, 0.906, 0.144], [0.988, 0.652, 0.198], [0.925, 0.394, 0.235], [0.796, 0.177, 0.214], [0.48, 0.016, 0.11]]
 };
+function colorScale(name) {
+  return Object.hasOwn(COLOR_SCALES, name) ? COLOR_SCALES[name] : COLOR_SCALES.viridis;
+}
 var CATEGORICAL_COLORS = [
   "#6366f1",
   "#f59e0b",
@@ -163,6 +169,7 @@ function trackModelListeners(model) {
 
 // ../static/icons.ts
 var ICONS = {
+  sidebar: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/></svg>',
   play: '<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg>',
   settings: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg>',
   close: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>',
@@ -454,7 +461,7 @@ function createToolbar(model, callbacks) {
   toolbar.className = "avs-toolbar";
   const sidebarBtn = document.createElement("button");
   sidebarBtn.className = "avs-btn";
-  sidebarBtn.innerHTML = ICONS.sidebar || ICONS.menu || '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/></svg>';
+  sidebarBtn.innerHTML = ICONS.sidebar;
   sidebarBtn.title = "Toggle explorer";
   sidebarBtn.addEventListener("click", () => callbacks.onToggleSidebar?.());
   toolbar.appendChild(sidebarBtn);
@@ -773,9 +780,9 @@ function updateConnectionFields(container, model) {
   container.innerHTML = "";
   const backend = model.get("backend") || "grafeo";
   const config = model.get("backend_config") ?? {};
-  const backendInfo = BACKENDS[backend];
-  if (!backendInfo || backend === "grafeo") return;
-  if (backendInfo.side === "browser") {
+  const backendInfo2 = backendInfo(backend);
+  if (!backendInfo2 || backend === "grafeo") return;
+  if (backendInfo2.side === "browser") {
     const urlGroup = createFormGroup("URL");
     const urlInput = document.createElement("input");
     urlInput.type = "text";
@@ -786,7 +793,7 @@ function updateConnectionFields(container, model) {
     urlGroup.appendChild(urlInput);
     container.appendChild(urlGroup);
   }
-  if (backendInfo.hasAuth) {
+  if (backendInfo2.hasAuth) {
     const keyGroup = createFormGroup("API Key");
     const keyInput = document.createElement("input");
     keyInput.type = "password";
@@ -798,16 +805,16 @@ function updateConnectionFields(container, model) {
     container.appendChild(keyGroup);
   }
   let nameLabel, namePlaceholder;
-  if (backendInfo.hasCollection) {
+  if (backendInfo2.hasCollection) {
     nameLabel = "Collection";
     namePlaceholder = "my_collection";
-  } else if (backendInfo.hasIndex) {
+  } else if (backendInfo2.hasIndex) {
     nameLabel = "Index";
     namePlaceholder = "my-index";
-  } else if (backendInfo.hasClass) {
+  } else if (backendInfo2.hasClass) {
     nameLabel = "Class";
     namePlaceholder = "MyClass";
-  } else if (backendInfo.hasTable) {
+  } else if (backendInfo2.hasTable) {
     nameLabel = "Table";
     namePlaceholder = "my_table";
   }
@@ -834,7 +841,7 @@ function updateConnectionFields(container, model) {
     nsGroup.appendChild(nsInput);
     container.appendChild(nsGroup);
   }
-  if (backendInfo.side === "python") {
+  if (backendInfo2.side === "python") {
     const note = document.createElement("div");
     note.className = "avs-note";
     note.textContent = "Configure this backend in Python using set_backend()";
@@ -1009,20 +1016,29 @@ var SHAPE_GEOMETRIES = {
   octahedron: () => new THREE.OctahedronGeometry(1),
   cylinder: () => new THREE.CylinderGeometry(0.5, 0.5, 1, 16)
 };
+var xyz = (p) => [p.x ?? 0, p.y ?? 0, p.z ?? 0];
 var DISTANCE_METRICS = {
   euclidean: (a, b) => {
-    const dx = a.x - b.x, dy = a.y - b.y, dz = a.z - b.z;
+    const [ax, ay, az] = xyz(a), [bx, by, bz] = xyz(b);
+    const dx = ax - bx, dy = ay - by, dz = az - bz;
     return Math.sqrt(dx * dx + dy * dy + dz * dz);
   },
   cosine: (a, b) => {
-    const dot = a.x * b.x + a.y * b.y + a.z * b.z;
-    const magA = Math.sqrt(a.x * a.x + a.y * a.y + a.z * a.z);
-    const magB = Math.sqrt(b.x * b.x + b.y * b.y + b.z * b.z);
+    const [ax, ay, az] = xyz(a), [bx, by, bz] = xyz(b);
+    const dot = ax * bx + ay * by + az * bz;
+    const magA = Math.sqrt(ax * ax + ay * ay + az * az);
+    const magB = Math.sqrt(bx * bx + by * by + bz * bz);
     if (magA === 0 || magB === 0) return 1;
     return 1 - dot / (magA * magB);
   },
-  manhattan: (a, b) => Math.abs(a.x - b.x) + Math.abs(a.y - b.y) + Math.abs(a.z - b.z),
-  dot_product: (a, b) => -(a.x * b.x + a.y * b.y + a.z * b.z)
+  manhattan: (a, b) => {
+    const [ax, ay, az] = xyz(a), [bx, by, bz] = xyz(b);
+    return Math.abs(ax - bx) + Math.abs(ay - by) + Math.abs(az - bz);
+  },
+  dot_product: (a, b) => {
+    const [ax, ay, az] = xyz(a), [bx, by, bz] = xyz(b);
+    return -(ax * bx + ay * by + az * bz);
+  }
 };
 function createCanvas(model, container, callbacks) {
   let scene;
@@ -1904,7 +1920,7 @@ function getPointSize(point, opts) {
   return (opts.sizeRange[0] + opts.sizeRange[1]) * 0.5;
 }
 function getColorFromScale(value, scaleName, domain) {
-  const scale = COLOR_SCALES[scaleName] || COLOR_SCALES.viridis;
+  const scale = colorScale(scaleName);
   const [min, max] = domain || [0, 1];
   const range = max - min;
   const t = range > 0 ? Math.max(0, Math.min(1, (value - min) / range)) : 0.5;
@@ -1998,7 +2014,11 @@ async function executeQuery2(query, config) {
   const headers = { "Content-Type": "application/json", "Api-Key": apiKey };
   const parsed = typeof query === "string" ? JSON.parse(query) : query;
   if (parsed.ids) {
-    const resp2 = await fetch(`${url}/vectors/fetch?${parsed.ids.map((id) => `ids=${id}`).join("&")}`, {
+    const params = new URLSearchParams();
+    for (const id of parsed.ids) params.append("ids", String(id));
+    const ns = parsed.namespace || namespace;
+    if (ns) params.set("namespace", ns);
+    const resp2 = await fetch(`${url}/vectors/fetch?${params}`, {
       method: "GET",
       headers
     });
@@ -2194,6 +2214,7 @@ function toPoints4(response) {
 var GRAFEO_WASM_VERSION = "0.6.2";
 var GRAFEO_WASM_CDN = `https://cdn.jsdelivr.net/npm/@grafeo-db/wasm@${GRAFEO_WASM_VERSION}`;
 var wasmDb = null;
+var connecting = null;
 function wasmBindingsKey(baseUrl) {
   return /* @__PURE__ */ Symbol.for(`grafeo-wasm:${baseUrl}/grafeo_wasm_bg.js`);
 }
@@ -2223,10 +2244,16 @@ function loadWasmBindings(baseUrl = GRAFEO_WASM_CDN) {
   return wasmGlobals[key];
 }
 async function connect() {
-  if (!wasmDb) {
-    const bindings = await loadWasmBindings();
-    wasmDb = new bindings.Database();
-  }
+  if (wasmDb) return true;
+  connecting ??= (async () => {
+    try {
+      const bindings = await loadWasmBindings();
+      wasmDb ??= new bindings.Database();
+    } finally {
+      connecting = null;
+    }
+  })();
+  await connecting;
   return true;
 }
 function isConnected() {
@@ -2351,9 +2378,16 @@ function render({ model: widgetModel, el }) {
   });
   main.appendChild(propertiesPanel.element);
   if (model.get("show_properties")) propertiesPanel.open();
-  const canvas = createCanvas(model, canvasContainer, {
-    onHover: (point) => propertiesPanel?.setHoveredPoint(point)
-  });
+  let canvas;
+  try {
+    canvas = createCanvas(model, canvasContainer, {
+      onHover: (point) => propertiesPanel?.setHoveredPoint(point)
+    });
+  } catch (err) {
+    stopFollowingTheme();
+    model.offAll();
+    throw err;
+  }
   async function runQuery() {
     const query = model.get("query_input") || "";
     if (canvas) {
@@ -2361,14 +2395,15 @@ function render({ model: widgetModel, el }) {
       if (toolbarUI) toolbarUI.setFilterCount(result.matched, result.total);
     }
     const backend = model.get("backend");
-    const backendInfo = BACKENDS[backend];
+    const backendInfo2 = backendInfo(backend);
     const mode = model.get("grafeo_connection_mode") || "embedded";
     const status = model.get("connection_status");
-    const isBrowserSide = backendInfo && backendInfo.side === "browser" || backend === "grafeo" && (mode === "server" || mode === "wasm");
+    const isBrowserSide = backendInfo2 && backendInfo2.side === "browser" || backend === "grafeo" && (mode === "server" || mode === "wasm");
     const hasBackend = isBrowserSide || status === "connected";
     if (!hasBackend) return;
     const ticket = startQuery(widgetModel);
     if (toolbarUI) toolbarUI.setLoading(true);
+    let pythonPending = false;
     try {
       model.set("query_error", null);
       model.set("connection_status", "connecting");
@@ -2380,6 +2415,13 @@ function render({ model: widgetModel, el }) {
         model.set("connection_status", "connected");
         model.save_changes();
       } else {
+        const onStatus = () => {
+          if (model.get("connection_status") === "connecting") return;
+          model.off("change:connection_status", onStatus);
+          if (toolbarUI && isLatestQuery(widgetModel, ticket)) toolbarUI.setLoading(false);
+        };
+        model.on("change:connection_status", onStatus);
+        pythonPending = true;
         model.set("_execute_query", Date.now());
         model.save_changes();
       }
@@ -2390,7 +2432,7 @@ function render({ model: widgetModel, el }) {
       model.save_changes();
       console.error("Query error:", err);
     } finally {
-      if (toolbarUI && isLatestQuery(widgetModel, ticket)) toolbarUI.setLoading(false);
+      if (!pythonPending && toolbarUI && isLatestQuery(widgetModel, ticket)) toolbarUI.setLoading(false);
     }
   }
   return () => {

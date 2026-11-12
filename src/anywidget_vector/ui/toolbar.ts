@@ -14,7 +14,7 @@ export function createToolbar(model: WidgetModel, callbacks: ToolbarCallbacks): 
   // Sidebar toggle (left, explorer panel)
   const sidebarBtn = document.createElement("button");
   sidebarBtn.className = "avs-btn";
-  sidebarBtn.innerHTML = ICONS.sidebar || ICONS.menu || '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/></svg>';
+  sidebarBtn.innerHTML = ICONS.sidebar;
   sidebarBtn.title = "Toggle explorer";
   sidebarBtn.addEventListener("click", () => callbacks.onToggleSidebar?.());
   toolbar.appendChild(sidebarBtn);

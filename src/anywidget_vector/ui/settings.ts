@@ -1,6 +1,6 @@
 // Settings panel component for VectorSpace widget
 import { ICONS } from "../static/icons.ts";
-import { BACKENDS } from "./constants.ts";
+import { BACKENDS, backendInfo as lookupBackend } from "./constants.ts";
 import type { BackendConfig, Panel, PanelCallbacks, WidgetModel } from "./types.ts";
 
 export function createSettingsPanel(model: WidgetModel, callbacks: PanelCallbacks): Panel {
@@ -277,7 +277,7 @@ function updateConnectionFields(container: HTMLElement, model: WidgetModel): voi
 
   const backend = model.get("backend") || "grafeo";
   const config = (model.get("backend_config") ?? {}) as BackendConfig;
-  const backendInfo = BACKENDS[backend];
+  const backendInfo = lookupBackend(backend);
 
   if (!backendInfo || backend === "grafeo") return;
 

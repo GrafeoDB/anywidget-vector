@@ -1,7 +1,7 @@
 // Weaviate browser-side client
 import type { BackendConfig, PointData } from "../../ui/types.ts";
 
-export async function executeQuery(query: string, config: BackendConfig): Promise<any> {
+export async function executeQuery(query: string | object, config: BackendConfig): Promise<any> {
   const { url, apiKey } = config;
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;

@@ -1,15 +1,19 @@
 // Pinecone browser-side client
 import type { BackendConfig, PointData } from "../../ui/types.ts";
 
-export async function executeQuery(query: string, config: BackendConfig): Promise<any> {
+export async function executeQuery(query: string | object, config: BackendConfig): Promise<any> {
   const { url, apiKey, namespace } = config;
   const headers: Record<string, string> = { "Content-Type": "application/json", "Api-Key": apiKey };
 
   const parsed = typeof query === "string" ? JSON.parse(query) : query;
 
   if (parsed.ids) {
-    // Fetch by IDs
-    const resp = await fetch(`${url}/vectors/fetch?${parsed.ids.map((id: string) => `ids=${id}`).join("&")}`, {
+    // Fetch by IDs, in the configured namespace like a query (ids are encoded: `&` or `#` would change the URL)
+    const params = new URLSearchParams();
+    for (const id of parsed.ids) params.append("ids", String(id));
+    const ns = parsed.namespace || namespace;
+    if (ns) params.set("namespace", ns);
+    const resp = await fetch(`${url}/vectors/fetch?${params}`, {
       method: "GET",
       headers,
     });

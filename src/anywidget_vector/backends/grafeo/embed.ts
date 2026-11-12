@@ -17,6 +17,7 @@ interface WasmDatabase {
 }
 
 let wasmDb: WasmDatabase | null = null;
+let connecting: Promise<void> | null = null;
 
 /**
  * Where the page keeps the loading promise for one glue module. A page can hold several copies of the widget
@@ -70,10 +71,17 @@ export function loadWasmBindings(baseUrl: string = GRAFEO_WASM_CDN): Promise<any
  * Initialize Grafeo WASM database.
  */
 export async function connect() {
-  if (!wasmDb) {
-    const bindings = await loadWasmBindings();
-    wasmDb = new bindings.Database();
-  }
+  if (wasmDb) return true;
+  // Queries started while the bindings load share one Database instead of each creating one
+  connecting ??= (async () => {
+    try {
+      const bindings = await loadWasmBindings();
+      wasmDb ??= new bindings.Database();
+    } finally {
+      connecting = null;
+    }
+  })();
+  await connecting;
   return true;
 }
 

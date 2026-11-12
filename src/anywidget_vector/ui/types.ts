@@ -9,12 +9,13 @@ export interface WidgetModel {
   off(event: string, callback: (...args: any[]) => void): void;
 }
 
-/** One point of the `points` trait. */
+/** One point of the `points` trait. A coordinate can be missing, or null (the Python side sends NaN and infinity
+ * as null): read it with `?? 0`. */
 export interface PointData {
   id?: string;
-  x: number;
-  y: number;
-  z: number;
+  x?: number | null;
+  y?: number | null;
+  z?: number | null;
   vector?: number[];
   color?: string;
   size?: number;

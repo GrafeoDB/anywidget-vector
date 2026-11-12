@@ -14,6 +14,9 @@
     cividis: [[0, 0.135, 0.304], [0, 0.179, 0.345], [0.117, 0.222, 0.36], [0.214, 0.263, 0.365], [0.293, 0.304, 0.37], [0.366, 0.345, 0.375], [0.437, 0.387, 0.382], [0.509, 0.429, 0.393], [0.582, 0.473, 0.409], [0.659, 0.52, 0.431], [0.739, 0.57, 0.461]],
     turbo: [[0.19, 0.072, 0.232], [0.254, 0.265, 0.53], [0.163, 0.471, 0.558], [0.134, 0.658, 0.518], [0.478, 0.821, 0.318], [0.741, 0.873, 0.15], [0.993, 0.906, 0.144], [0.988, 0.652, 0.198], [0.925, 0.394, 0.235], [0.796, 0.177, 0.214], [0.48, 0.016, 0.11]]
   };
+  function colorScale(name) {
+    return Object.hasOwn(COLOR_SCALES, name) ? COLOR_SCALES[name] : COLOR_SCALES.viridis;
+  }
   var CATEGORICAL_COLORS = [
     "#6366f1",
     "#f59e0b",
@@ -49,7 +52,7 @@
     return (opts2.sizeRange[0] + opts2.sizeRange[1]) * 0.5;
   }
   function getColorFromScale(value, scaleName, domain) {
-    const scale = COLOR_SCALES[scaleName] || COLOR_SCALES.viridis;
+    const scale = colorScale(scaleName);
     const [min, max] = domain || [0, 1];
     const range = max - min;
     const t = range > 0 ? Math.max(0, Math.min(1, (value - min) / range)) : 0.5;
@@ -81,12 +84,17 @@
   }
 
   // export.ts
+  var box = new THREE.Box3();
+  DATA.forEach((p) => box.expandByPoint(new THREE.Vector3(p.x ?? 0, p.y ?? 0, p.z ?? 0)));
+  var dataSize = box.getSize(new THREE.Vector3()).length() || 1;
+  var scaleFactor = dataSize / 10;
+  var rawRange = OPTIONS.size_range || [0.02, 0.06];
   var opts = {
     colorField: OPTIONS.color_field || null,
     colorScale: OPTIONS.color_scale || "viridis",
     colorDomain: OPTIONS.color_domain || null,
     sizeField: OPTIONS.size_field || null,
-    sizeRange: OPTIONS.size_range || [0.02, 0.1]
+    sizeRange: [rawRange[0] * scaleFactor, rawRange[1] * scaleFactor]
   };
   if (opts.colorField && !opts.colorDomain) {
     const values = DATA.map((p) => p[opts.colorField]).filter((v) => typeof v === "number");
@@ -147,22 +155,22 @@
   var pointsGroup = new THREE.Group();
   scene.add(pointsGroup);
   if (DATA.length > 0) {
+    const geometry = new THREE.SphereGeometry(1, 16, 16);
+    const material = new THREE.MeshPhongMaterial({ color: 16777215 });
+    const mesh = new THREE.InstancedMesh(geometry, material, DATA.length);
+    const matrix = new THREE.Matrix4();
     DATA.forEach((point, idx) => {
-      const geometry = new THREE.SphereGeometry(1, 16, 16);
-      const color = getPointColor(point, opts);
-      const material = new THREE.MeshPhongMaterial({ color });
-      const mesh = new THREE.Mesh(geometry, material);
       const size = getPointSize(point, opts);
-      mesh.scale.set(size, size, size);
-      mesh.position.set(point.x ?? 0, point.y ?? 0, point.z ?? 0);
-      mesh.userData = { pointIndex: idx, pointId: point.id || "point_" + idx };
-      pointsGroup.add(mesh);
+      matrix.makeScale(size, size, size).setPosition(point.x ?? 0, point.y ?? 0, point.z ?? 0);
+      mesh.setMatrixAt(idx, matrix);
+      mesh.setColorAt(idx, getPointColor(point, opts));
     });
-    const box = new THREE.Box3();
-    DATA.forEach((p) => box.expandByPoint(new THREE.Vector3(p.x ?? 0, p.y ?? 0, p.z ?? 0)));
+    mesh.instanceMatrix.needsUpdate = true;
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    mesh.computeBoundingSphere();
+    pointsGroup.add(mesh);
     const center = box.getCenter(new THREE.Vector3());
-    const bsize = box.getSize(new THREE.Vector3()).length();
-    const distance = bsize / (2 * Math.tan(Math.PI * camera.fov / 360));
+    const distance = dataSize / (2 * Math.tan(Math.PI * camera.fov / 360));
     controls.target.copy(center);
     camera.position.copy(center.clone().add(new THREE.Vector3(distance * 0.6, distance * 0.6, distance * 0.6)));
     controls.update();
@@ -177,9 +185,8 @@
     raycaster.setFromCamera(mouse, camera);
     const intersects = raycaster.intersectObjects(pointsGroup.children, true);
     if (intersects.length > 0) {
-      const hit = intersects[0];
-      const idx = hit.object.userData.pointIndex;
-      const point = DATA[idx];
+      const idx = intersects[0].instanceId;
+      const point = idx === void 0 ? void 0 : DATA[idx];
       if (point) {
         const node = (tag, cls, text) => {
           const el = document.createElement(tag);
@@ -204,6 +211,9 @@
     } else {
       tooltipEl.style.display = "none";
     }
+  });
+  container.addEventListener("mouseleave", () => {
+    tooltipEl.style.display = "none";
   });
   function animate() {
     requestAnimationFrame(animate);
