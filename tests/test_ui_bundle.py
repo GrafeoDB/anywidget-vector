@@ -375,6 +375,22 @@ console.log(JSON.stringify(urls));
         (url,) = json.loads(out)
         assert url == "https://pc/vectors/fetch?ids=a%26b&ids=c%23d&namespace=docs"
 
+    def test_pinecone_fetch_response_becomes_points(self, tmp_path):
+        # /vectors/fetch answers with records keyed by id under `vectors`, not a `matches` list
+        client = json.dumps(_src_uri("backends", "pinecone", "client.ts"))
+        out = run_node_module(
+            f"""
+import {{ toPoints }} from {client};
+const response = {{
+  namespace: "docs",
+  vectors: {{ a: {{ id: "a", values: [1, 2, 3, 4], metadata: {{ label: "A" }} }} }},
+}};
+console.log(JSON.stringify(toPoints(response)));
+""",
+            tmp_path,
+        )
+        assert json.loads(out) == [{"id": "a", "x": 1, "y": 2, "z": 3, "vector": [1, 2, 3, 4], "label": "A"}]
+
     def test_wasm_concurrent_connects_create_one_database(self, tmp_path):
         out = run_node_module(
             _backend_harness(

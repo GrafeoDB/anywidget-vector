@@ -2038,7 +2038,7 @@ async function executeQuery2(query, config) {
   return await resp.json();
 }
 function toPoints2(response) {
-  const matches = response.matches || [];
+  const matches = response.matches || Object.values(response.vectors ?? {});
   return matches.map((m) => ({
     id: m.id,
     score: m.score,
@@ -2055,11 +2055,10 @@ async function executeQuery3(query, config) {
   const { url, apiKey } = config;
   const headers = { "Content-Type": "application/json" };
   if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
-  const graphql = typeof query === "string" ? query : JSON.stringify(query);
   const resp = await fetch(`${url}/v1/graphql`, {
     method: "POST",
     headers,
-    body: JSON.stringify({ query: graphql })
+    body: JSON.stringify({ query })
   });
   if (!resp.ok) throw new Error(`Weaviate error: ${await resp.text()}`);
   const data = await resp.json();

@@ -141,7 +141,8 @@ async function mount(values: Record<string, any> = {}, { noWebGL = false } = {})
   try {
     cleanup = widget.render({ model: model as any, el });
   } catch (err) {
-    if (!noWebGL) throw err;
+    // Only the stub's missing-WebGL error is the expected failure; anything else is a regression
+    if (!noWebGL || !(err instanceof Error) || err.message !== "Error creating WebGL context.") throw err;
     error = err;
   }
   return { window, model, el, cleanup, error };

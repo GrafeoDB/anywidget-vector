@@ -37,7 +37,8 @@ export async function executeQuery(query: string | object, config: BackendConfig
 }
 
 export function toPoints(response: any): PointData[] {
-  const matches = response.matches || [];
+  // A query answers with a `matches` list; a fetch by ids with a `vectors` object keyed by id
+  const matches = response.matches || Object.values(response.vectors ?? {});
   return matches.map((m: any) => ({
     id: m.id,
     score: m.score,

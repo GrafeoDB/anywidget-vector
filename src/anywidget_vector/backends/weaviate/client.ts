@@ -1,18 +1,16 @@
 // Weaviate browser-side client
 import type { BackendConfig, PointData } from "../../ui/types.ts";
 
-export async function executeQuery(query: string | object, config: BackendConfig): Promise<any> {
+export async function executeQuery(query: string, config: BackendConfig): Promise<any> {
   const { url, apiKey } = config;
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
 
-  // Query is GraphQL string
-  const graphql = typeof query === "string" ? query : JSON.stringify(query);
-
+  // The query is GraphQL text, sent as it is
   const resp = await fetch(`${url}/v1/graphql`, {
     method: "POST",
     headers,
-    body: JSON.stringify({ query: graphql }),
+    body: JSON.stringify({ query }),
   });
 
   if (!resp.ok) throw new Error(`Weaviate error: ${await resp.text()}`);

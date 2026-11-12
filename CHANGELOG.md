@@ -16,7 +16,7 @@ Grafeo 0.6.2 release: the Grafeo backend moves to grafeo 0.6.2 in Python and in 
 - **Exported point sizes match the widget**: `to_html()` scales `size_range` by the data extent, as the live view does.
 - **An exported single point is in view**: A page with one point, or with points that share a position, places the camera away from them instead of on them.
 - **The exported tooltip hides on leave**: Moving the pointer off an exported page hides the tooltip.
-- **Pinecone fetches by id keep the namespace**: A `{"ids": [...]}` query sends the configured `namespace` and encodes each id, so ids with `&` or `#` resolve.
+- **Pinecone fetches by id show their points**: A `{"ids": [...]}` query reads the fetched records (previously it showed no points), sends the configured `namespace`, and encodes each id, so ids with `&` or `#` resolve.
 - **WASM mode creates one database**: Queries started while `@grafeo-db/wasm` loads share one database instead of each creating one.
 - **The Run button shows Python-side queries**: For backends that run in Python (Grafeo embedded, Chroma, LanceDB), the button stays in its loading state until the result arrives.
 - **A widget without WebGL leaves no listeners**: When the 3D canvas cannot be created, the view removes the model and theme listeners it had added.
