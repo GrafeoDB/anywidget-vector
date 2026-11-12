@@ -13,7 +13,7 @@ try {
 } catch {
   // not installed
 }
-const skip = JSDOM ? "" : "jsdom is not installed (npm ci --prefix tests/js)";
+const skip: string | false = JSDOM ? false : "jsdom is not installed (npm ci --prefix tests/js)";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const uiDir = path.resolve(here, "..", "..", "src", "anywidget_vector", "ui");
@@ -94,7 +94,7 @@ const DEFAULTS: Record<string, any> = {
 };
 
 async function mount(values: Record<string, any> = {}) {
-  assert.ok(JSDOM, skip);
+  assert.ok(JSDOM, "jsdom is not installed (npm ci --prefix tests/js)");
   const dom = new JSDOM("<!DOCTYPE html><html><body></body></html>", { pretendToBeVisual: true });
   const { window } = dom;
   // The widget modules read the DOM through globals; point them at the jsdom window
@@ -135,7 +135,7 @@ async function mount(values: Record<string, any> = {}) {
   return { window, model, el, cleanup };
 }
 
-test("renders the toolbar, sidebar, properties and a canvas", async () => {
+test("renders the toolbar, sidebar, properties and a canvas", { skip }, async () => {
   const { el, cleanup } = await mount({
     points: [
       { id: "a", x: 1, y: 0, z: 0, label: "A" },
@@ -154,7 +154,7 @@ test("renders the toolbar, sidebar, properties and a canvas", async () => {
   cleanup();
 });
 
-test("a theme change event flips the dark class on the wrapper", async () => {
+test("a theme change event flips the dark class on the wrapper", { skip }, async () => {
   const { model, el, cleanup } = await mount({ dark_mode: true, _theme_explicit: true });
   const wrapper = el.querySelector(".avs-wrapper");
   assert.ok(wrapper?.classList.contains("avs-dark"), "dark mode on from the start");
@@ -164,7 +164,7 @@ test("a theme change event flips the dark class on the wrapper", async () => {
   cleanup();
 });
 
-test("a points change event rebuilds the scene without error", async () => {
+test("a points change event rebuilds the scene without error", { skip }, async () => {
   const { model, cleanup } = await mount({ points: [{ id: "a", x: 0, y: 0, z: 0 }] });
   model.values.points = [
     { id: "a", x: 0, y: 0, z: 0 },
@@ -174,7 +174,7 @@ test("a points change event rebuilds the scene without error", async () => {
   cleanup();
 });
 
-test("cleanup removes every model listener the view added", async () => {
+test("cleanup removes every model listener the view added", { skip }, async () => {
   const { model, cleanup } = await mount();
   const before = model.listenerCount();
   assert.ok(before > 0, "the view listens to model changes");

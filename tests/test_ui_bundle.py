@@ -21,11 +21,11 @@ from packaging.requirements import Requirement
 from packaging.version import Version
 
 from anywidget_vector.ui import get_esm, get_vendor_js
-from tests.support import NODE, run_node_module
+from tests.support import NODE, NODE_RUNS_TS, run_node_module
 
 ROOT = Path(__file__).resolve().parent.parent
 PACKAGE = ROOT / "src" / "anywidget_vector"
-needs_node = pytest.mark.skipif(NODE is None, reason="Node.js is not installed")
+needs_node = pytest.mark.skipif(not NODE_RUNS_TS, reason="Node.js 22.18 or later is not installed")
 
 TOP_LEVEL_FUNCTION = re.compile(r"^(?:async\s+)?function\s+(\w+)\s*\(", re.MULTILINE)
 TOP_LEVEL_BINDING = re.compile(r"^(?:const|let|var)\s+(\w+)", re.MULTILINE)
@@ -128,19 +128,37 @@ class TestBundleStructure:
 
     @needs_node
     def test_bundle_loads_without_a_network(self, esm, tmp_path):
-        """Node imports no https: URL; the module loading at all shows nothing comes from a CDN.
+        """Node imports the module as the widget ships it, vendored Three.js included, with no stub.
 
-        The bundle reads the vendored Three.js through the ``anywidgetVectorVendor`` global, so a
-        stub stands in for it (Three.js itself needs WebGL, which Node does not have).
+        It imports no https: URL, so the module loading at all shows nothing comes from a CDN, and the
+        bundle finds the vendored ``anywidgetVectorVendor`` binding inlined in front of it.
         """
         bundle = tmp_path / "widget.mjs"
         bundle.write_text(esm, encoding="utf-8")
-        script = (
-            "globalThis.anywidgetVectorVendor = { THREE: {}, OrbitControls: class {} };"
-            f"const m = await import({json.dumps(bundle.as_uri())}); console.log(typeof m.default.render)"
-        )
+        script = f"const m = await import({json.dumps(bundle.as_uri())}); console.log(typeof m.default.render)"
         out = _run_node("--input-type=module", "-e", script)
         assert out.strip() == "function"
+
+    @needs_node
+    def test_export_page_script_finds_the_vendored_three(self, tmp_path):
+        """The export page's module script (vendored Three.js, DATA/OPTIONS, dist/export.js) runs up to the DOM.
+
+        Node has no DOM, so ``document.getElementById`` throws a sentinel: reaching it shows the renderer
+        resolved ``anywidgetVectorVendor`` from the vendored code in the same module.
+        """
+        from anywidget_vector import VectorSpace
+
+        page = VectorSpace(points=[{"id": "a", "x": 0, "y": 0, "z": 0}]).to_html()
+        match = re.search(r'<script type="module">\n(.*)</script>', page, re.DOTALL)
+        assert match, "the export page has one module script"
+        script = tmp_path / "page.mjs"
+        script.write_text(
+            'globalThis.document = { getElementById() { throw new Error("reached the DOM"); } };\n' + match.group(1),
+            encoding="utf-8",
+        )
+        assert NODE is not None
+        proc = subprocess.run([NODE, str(script)], capture_output=True, text=True, encoding="utf-8", check=False)
+        assert "reached the DOM" in proc.stderr, proc.stderr
 
 
 class TestWasmPin:

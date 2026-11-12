@@ -22,7 +22,7 @@ uv add anywidget-vector
 uv add "anywidget-vector[grafeo]"   # with the embedded Grafeo backend (grafeo 0.6)
 ```
 
-Requires Python 3.12 or later. The `grafeo` extra installs grafeo 0.6 (`grafeo>=0.6.2,<0.7`); the browser-side WASM mode loads the matching `@grafeo-db/wasm` from a CDN. Upgrading from 0.3 with Grafeo:
+Requires Python 3.12 or later. The `grafeo` extra installs grafeo 0.6 (`grafeo>=0.6.2,<0.7`; anywidget-vector 0.4.0 still accepts grafeo 0.6.0 and 0.6.1); the browser-side WASM mode loads the matching `@grafeo-db/wasm` from a CDN. Upgrading from 0.3 with Grafeo:
 see [Upgrading to 0.4](#upgrading-to-04).
 
 ## Quick Start
@@ -390,8 +390,8 @@ The distance metrics of a Grafeo vector index (`cosine`, `euclidean`, `dot_produ
 same values as the widget's `distance_metric` and `compute_distances()`.
 
 The browser engine version is set in one place, `GRAFEO_WASM_VERSION` in
-`src/anywidget_vector/backends/grafeo/embed.js`, and moves in lockstep with the `grafeo` extra. Before a bump,
-run `node tests/js/wasm_smoke.mjs <unpacked @grafeo-db/wasm package>`.
+`src/anywidget_vector/backends/grafeo/embed.ts`, and moves in lockstep with the `grafeo` extra. Before a bump,
+run `node tests/js/wasm_smoke.ts <unpacked @grafeo-db/wasm package>`.
 
 ### Upgrading to 0.4
 

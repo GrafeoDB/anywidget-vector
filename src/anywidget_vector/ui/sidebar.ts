@@ -279,7 +279,7 @@ export function createSidebar(model: WidgetModel, callbacks: PanelCallbacks): Pa
       return Math.sqrt(dx*dx + dy*dy + dz*dz);
     }
 
-    const sorted = others.map((p: PointData) => ({ id: p.id, label: String(p.label ?? p.id), d: dist(ref, p) }))
+    const sorted = others.map((p: PointData) => ({ id: p.id, label: String(p.label || p.id), d: dist(ref, p) }))
       .sort((a, b) => a.d - b.d).slice(0, 5);
 
     distInfo.innerHTML = "<strong>" + escapeHtml(ref.label || ref.id) + "</strong><br>" +

@@ -2,8 +2,8 @@
 "use strict";
 (() => {
   // vendor-globals.ts
-  var THREE = globalThis.anywidgetVectorVendor.THREE;
-  var OrbitControls = globalThis.anywidgetVectorVendor.OrbitControls;
+  var THREE = anywidgetVectorVendor.THREE;
+  var OrbitControls = anywidgetVectorVendor.OrbitControls;
 
   // constants.ts
   var COLOR_SCALES = {

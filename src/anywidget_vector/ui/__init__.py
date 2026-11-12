@@ -5,8 +5,8 @@ esbuild into ui/dist/widget.js (scripts/build-esm.mjs, `npm run build`; CI and
 tests/test_ui_bundle.py fail when it is stale), plus the standalone export page's
 renderer into ui/dist/export.js (inlined by widget.py's to_html). Three.js and OrbitControls
 (vendor/three.min.js, built by scripts/vendor) are inlined in front of the bundle
-as a classic script that sets the global ``anywidgetVectorVendor``; the bundle
-reads it through ui/vendor-globals.ts.
+in the same ES module: one top-level ``var anywidgetVectorVendor``, a module-scoped
+binding that the bundle reads by name through ui/vendor-globals.ts.
 """
 
 from pathlib import Path
@@ -20,7 +20,7 @@ def _read_file(path: Path) -> str:
 
 
 def get_vendor_js() -> str:
-    """Three.js and OrbitControls, bundled (a script that sets ``anywidgetVectorVendor``; built by scripts/vendor)."""
+    """Three.js and OrbitControls, bundled (one ``var anywidgetVectorVendor``; built by scripts/vendor)."""
     return _read_file(_UI_DIR / "vendor" / "three.min.js")
 
 

@@ -15,10 +15,10 @@ import pytest
 import traitlets
 
 from anywidget_vector import VectorSpace
-from tests.support import NODE, run_node_ts_module
+from tests.support import NODE_RUNS_TS, run_node_ts_module
 
 THEME_TS = Path(__file__).resolve().parent.parent / "src" / "anywidget_vector" / "ui" / "theme.ts"
-needs_node = pytest.mark.skipif(NODE is None, reason="Node.js is not installed")
+needs_node = pytest.mark.skipif(not NODE_RUNS_TS, reason="Node.js 22.18 or later is not installed")
 
 
 def _theme_source(strip_exports: bool = False) -> str:

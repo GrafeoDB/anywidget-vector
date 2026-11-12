@@ -2,6 +2,9 @@
   "name": "anywidget-vector",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=22.18"
+  },
   "description": "Front end of the anywidget-vector widget, in TypeScript (bundled with esbuild; type-checked with tsc)",
   "scripts": {
     "build": "node scripts/build-esm.mjs",

@@ -21,6 +21,22 @@ WIDGET_METRICS = ("euclidean", "cosine", "manhattan", "dot_product")
 NODE = shutil.which("node")
 
 
+def _node_strips_types() -> bool:
+    """Whether Node runs .ts files without a flag (type stripping: Node 22.18 or later)."""
+    if NODE is None:
+        return False
+    proc = subprocess.run([NODE, "--version"], capture_output=True, text=True, timeout=30, check=False)
+    try:
+        major, minor = (int(part) for part in proc.stdout.strip().lstrip("v").split(".")[:2])
+    except ValueError:
+        return False
+    return (major, minor) >= (22, 18)
+
+
+# The tests import the TypeScript sources directly, so they need a Node that strips types
+NODE_RUNS_TS = _node_strips_types()
+
+
 def run_node_module(source: str, tmp_path: Path) -> str:
     """Run JavaScript as an ES module with Node and return stdout (fails the test on error)."""
     assert NODE is not None

@@ -400,7 +400,7 @@ function createSidebar(model, callbacks) {
       if (metric === "dot_product") return -((a.x ?? 0) * (b.x ?? 0) + (a.y ?? 0) * (b.y ?? 0) + (a.z ?? 0) * (b.z ?? 0));
       return Math.sqrt(dx * dx + dy * dy + dz * dz);
     }
-    const sorted = others.map((p) => ({ id: p.id, label: String(p.label ?? p.id), d: dist(ref, p) })).sort((a, b) => a.d - b.d).slice(0, 5);
+    const sorted = others.map((p) => ({ id: p.id, label: String(p.label || p.id), d: dist(ref, p) })).sort((a, b) => a.d - b.d).slice(0, 5);
     distInfo.innerHTML = "<strong>" + escapeHtml(ref.label || ref.id) + "</strong><br>" + sorted.map((n) => '<span class="avs-property-key">' + escapeHtml(n.label) + '</span> <span class="avs-property-value">' + n.d.toFixed(2) + "</span>").join("<br>");
   }
   model.on("change:points", () => {
@@ -995,8 +995,8 @@ function formatValue(val) {
 }
 
 // vendor-globals.ts
-var THREE = globalThis.anywidgetVectorVendor.THREE;
-var OrbitControls = globalThis.anywidgetVectorVendor.OrbitControls;
+var THREE = anywidgetVectorVendor.THREE;
+var OrbitControls = anywidgetVectorVendor.OrbitControls;
 
 // canvas.ts
 var mesh = (o) => o;
