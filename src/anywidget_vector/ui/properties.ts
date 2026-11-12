@@ -1,7 +1,8 @@
 // Properties panel component for VectorSpace widget
-import { ICONS } from "../static/icons.js";
+import { ICONS } from "../static/icons.ts";
+import type { PanelCallbacks, PointData, PropertiesPanel, WidgetModel } from "./types.ts";
 
-export function createPropertiesPanel(model, callbacks) {
+export function createPropertiesPanel(model: WidgetModel, callbacks: PanelCallbacks): PropertiesPanel {
   const panel = document.createElement("div");
   panel.className = "avs-panel avs-panel-right";
 
@@ -30,12 +31,12 @@ export function createPropertiesPanel(model, callbacks) {
 
   // Update on selection change
   model.on("change:selected_points", () => {
-    const selectedIds = model.get("selected_points") || [];
-    const points = model.get("points") || [];
+    const selectedIds = (model.get("selected_points") ?? []) as string[];
+    const points = (model.get("points") ?? []) as PointData[];
     if (selectedIds.length === 0) {
       showEmpty(content);
     } else if (selectedIds.length === 1) {
-      const point = points.find(p => p.id === selectedIds[0]);
+      const point = points.find((p: PointData) => p.id === selectedIds[0]);
       if (point) {
         showPointProperties(content, point);
       } else {
@@ -52,8 +53,8 @@ export function createPropertiesPanel(model, callbacks) {
     close: () => panel.classList.remove("avs-open"),
     toggle: () => panel.classList.toggle("avs-open"),
     isOpen: () => panel.classList.contains("avs-open"),
-    setHoveredPoint: (point) => {
-      const selectedIds = model.get("selected_points") || [];
+    setHoveredPoint: (point: PointData | null) => {
+      const selectedIds = (model.get("selected_points") ?? []) as string[];
       if (point && selectedIds.length === 0) {
         showPointProperties(content, point, true);
       } else if (!point && selectedIds.length === 0) {
@@ -63,7 +64,7 @@ export function createPropertiesPanel(model, callbacks) {
   };
 }
 
-function showEmpty(container) {
+function showEmpty(container: HTMLElement): void {
   container.innerHTML = `
     <div class="avs-properties-empty">
       <p>Select a point to view its properties</p>
@@ -71,7 +72,7 @@ function showEmpty(container) {
   `;
 }
 
-function showMultipleSelection(container, count) {
+function showMultipleSelection(container: HTMLElement, count: number): void {
   container.innerHTML = `
     <div class="avs-properties-empty">
       <p>${count} points selected</p>
@@ -79,7 +80,7 @@ function showMultipleSelection(container, count) {
   `;
 }
 
-function showPointProperties(container, point, isHover = false) {
+function showPointProperties(container: HTMLElement, point: PointData, isHover = false): void {
   container.innerHTML = "";
 
   // Header with ID
@@ -125,13 +126,13 @@ function showPointProperties(container, point, isHover = false) {
     metaHeader.textContent = "Metadata";
     container.appendChild(metaHeader);
 
-    metaKeys.forEach(key => {
+    metaKeys.forEach((key: string) => {
       addPropertyRow(container, key, formatValue(point[key]));
     });
   }
 }
 
-function addPropertyRow(container, key, value) {
+export function addPropertyRow(container: HTMLElement, key: string, value: unknown): void {
   // Keys and values come from point data: textContent only, never markup
   const row = document.createElement("div");
   row.className = "avs-property-row";
@@ -146,13 +147,13 @@ function addPropertyRow(container, key, value) {
   container.appendChild(row);
 }
 
-function formatNumber(val) {
+function formatNumber(val: unknown): string {
   if (val === undefined || val === null) return "—";
   if (typeof val === "number") return val.toFixed(4);
   return String(val);
 }
 
-function formatValue(val) {
+function formatValue(val: unknown): string {
   if (val === undefined || val === null) return "—";
   if (typeof val === "number") return val.toFixed(4);
   if (typeof val === "object") return JSON.stringify(val).slice(0, 50);

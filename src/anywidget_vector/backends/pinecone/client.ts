@@ -1,14 +1,19 @@
 // Pinecone browser-side client
+import type { BackendConfig, PointData } from "../../ui/types.ts";
 
-export async function executeQuery(query, config) {
+export async function executeQuery(query: string | object, config: BackendConfig): Promise<any> {
   const { url, apiKey, namespace } = config;
-  const headers = { "Content-Type": "application/json", "Api-Key": apiKey };
+  const headers: Record<string, string> = { "Content-Type": "application/json", "Api-Key": apiKey };
 
   const parsed = typeof query === "string" ? JSON.parse(query) : query;
 
   if (parsed.ids) {
-    // Fetch by IDs
-    const resp = await fetch(`${url}/vectors/fetch?${parsed.ids.map(id => `ids=${id}`).join("&")}`, {
+    // Fetch by IDs, in the configured namespace like a query (ids are encoded: `&` or `#` would change the URL)
+    const params = new URLSearchParams();
+    for (const id of parsed.ids) params.append("ids", String(id));
+    const ns = parsed.namespace || namespace;
+    if (ns) params.set("namespace", ns);
+    const resp = await fetch(`${url}/vectors/fetch?${params}`, {
       method: "GET",
       headers,
     });
@@ -31,9 +36,10 @@ export async function executeQuery(query, config) {
   return await resp.json();
 }
 
-export function toPoints(response) {
-  const matches = response.matches || [];
-  return matches.map(m => ({
+export function toPoints(response: any): PointData[] {
+  // A query answers with a `matches` list; a fetch by ids with a `vectors` object keyed by id
+  const matches = response.matches || Object.values(response.vectors ?? {});
+  return matches.map((m: any) => ({
     id: m.id,
     score: m.score,
     x: m.values?.[0] ?? m.metadata?.x ?? 0,

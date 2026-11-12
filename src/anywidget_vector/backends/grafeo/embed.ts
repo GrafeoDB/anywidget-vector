@@ -2,14 +2,22 @@
  * Grafeo WASM browser-side client for vector queries.
  * Lazy-loads @grafeo-db/wasm from the jsDelivr CDN on first use.
  */
-import { grafeoRowToPoint } from "./points.js";
+import { grafeoRowToPoint } from "./points.ts";
+import type { BackendConfig, PointData } from "../../ui/types.ts";
 
 // The only place the browser engine version is set. Keep it exact and in
 // lockstep with the `grafeo` Python extra in pyproject.toml.
-export const GRAFEO_WASM_VERSION = "0.6.0";
+export const GRAFEO_WASM_VERSION = "0.6.2";
 export const GRAFEO_WASM_CDN = `https://cdn.jsdelivr.net/npm/@grafeo-db/wasm@${GRAFEO_WASM_VERSION}`;
 
-let wasmDb = null;
+interface WasmDatabase {
+  free(): void;
+  execute(query: string): unknown;
+  executeWithLanguage(query: string, language: string): unknown;
+}
+
+let wasmDb: WasmDatabase | null = null;
+let connecting: Promise<void> | null = null;
 
 /**
  * Where the page keeps the loading promise for one glue module. A page can hold several copies of the widget
@@ -17,7 +25,7 @@ let wasmDb = null;
  * cached glue module from the browser. A second instantiation would hand that glue new memory and break every
  * database the first one created, so the promise lives on globalThis, keyed by the glue URL alone.
  */
-export function wasmBindingsKey(baseUrl) {
+export function wasmBindingsKey(baseUrl: string): symbol {
   return Symbol.for(`grafeo-wasm:${baseUrl}/grafeo_wasm_bg.js`);
 }
 
@@ -32,10 +40,11 @@ export function wasmBindingsKey(baseUrl) {
  *
  * `baseUrl` exists for tests/js/wasm_smoke.mjs, which loads a local package.
  */
-export function loadWasmBindings(baseUrl = GRAFEO_WASM_CDN) {
+export function loadWasmBindings(baseUrl: string = GRAFEO_WASM_CDN): Promise<any> {
   const key = wasmBindingsKey(baseUrl);
-  if (!globalThis[key]) {
-    globalThis[key] = (async () => {
+  const wasmGlobals = globalThis as unknown as Record<symbol, Promise<any> | undefined>;
+  if (!wasmGlobals[key]) {
+    wasmGlobals[key] = (async () => {
       const bindings = await import(`${baseUrl}/grafeo_wasm_bg.js`);
       const imports = { "./grafeo_wasm_bg.js": bindings };
       const wasmUrl = `${baseUrl}/grafeo_wasm_bg.wasm`;
@@ -51,21 +60,28 @@ export function loadWasmBindings(baseUrl = GRAFEO_WASM_CDN) {
       bindings.__wbg_set_wasm(instance.exports);
       return bindings;
     })().catch((err) => {
-      delete globalThis[key]; // allow a retry after a network error
+      delete wasmGlobals[key]; // allow a retry after a network error
       throw err;
     });
   }
-  return globalThis[key];
+  return wasmGlobals[key] as Promise<any>;
 }
 
 /**
  * Initialize Grafeo WASM database.
  */
 export async function connect() {
-  if (!wasmDb) {
-    const bindings = await loadWasmBindings();
-    wasmDb = new bindings.Database();
-  }
+  if (wasmDb) return true;
+  // Queries started while the bindings load share one Database instead of each creating one
+  connecting ??= (async () => {
+    try {
+      const bindings = await loadWasmBindings();
+      wasmDb ??= new bindings.Database();
+    } finally {
+      connecting = null;
+    }
+  })();
+  await connecting;
   return true;
 }
 
@@ -94,7 +110,7 @@ export function isConnected() {
  * Execute a query against the WASM database.
  * The engine rejects several `;`-separated statements in one call.
  */
-export async function executeQuery(query, config) {
+export async function executeQuery(query: string, config?: BackendConfig): Promise<unknown> {
   if (!wasmDb) throw new Error("WASM database not initialized");
 
   const language = config?.language;
@@ -108,7 +124,7 @@ export async function executeQuery(query, config) {
  * Convert WASM execute() result to points array.
  * execute() returns Array<Record<string, unknown>>.
  */
-export function toPoints(result) {
+export function toPoints(result: unknown): PointData[] {
   if (!Array.isArray(result)) return [];
   return result.map((row, i) => grafeoRowToPoint(Object.entries(row ?? {}), i));
 }

@@ -1,3 +1,4 @@
+import type { WidgetModel } from "./types.ts";
 // === Theme: follow the host page, unless the user chose ===
 // The contract is shared with anywidget-graph and anywidget-archimate: dark_mode reports the current theme.
 // It follows the page until someone chooses (dark_mode passed from Python, set from Python after display, or
@@ -11,9 +12,10 @@ export const THEME_BACKGROUNDS = { dark: "#181c1a", light: "#ffffff" };
 // hands each view its own model proxy, and a page can hold several copies of this module (a cell run again), while
 // every view of one widget shares the underlying model and sees the others' writes.
 const THEME_WRITES = Symbol.for("anywidget.theme-writes");
+const themeWrites = globalThis as unknown as Record<PropertyKey, number | undefined>;
 
 function writingTheme() {
-  return (globalThis[THEME_WRITES] ?? 0) > 0;
+  return (themeWrites[THEME_WRITES] ?? 0) > 0;
 }
 
 /**
@@ -21,7 +23,13 @@ function writingTheme() {
  * closest ancestor, then on html and body (other data-theme values, such as design-system names, are ignored),
  * then a dark or light class on html or body, then the operating system.
  */
-export function resolveDark({ ancestorTheme, htmlTheme, bodyTheme, classes = [], prefersDark = false }) {
+export function resolveDark({ ancestorTheme, htmlTheme, bodyTheme, classes = [], prefersDark = false }: {
+  ancestorTheme?: string | null;
+  htmlTheme?: string | null;
+  bodyTheme?: string | null;
+  classes?: string[];
+  prefersDark?: boolean;
+}): boolean {
   for (const theme of [ancestorTheme, htmlTheme, bodyTheme]) {
     if (theme === "dark") return true;
     if (theme === "light") return false;
@@ -31,7 +39,7 @@ export function resolveDark({ ancestorTheme, htmlTheme, bodyTheme, classes = [],
   return Boolean(prefersDark);
 }
 
-export function detectHostDark(el) {
+export function detectHostDark(el: HTMLElement | null): boolean {
   const html = document.documentElement;
   const body = document.body;
   const ancestor = el?.closest?.('[data-theme="dark"], [data-theme="light"]');
@@ -48,9 +56,9 @@ export function detectHostDark(el) {
  * Keep dark_mode and background in step with the page and call apply(dark) on every theme change.
  * Returns a function that stops following (observers, media listener and model listeners).
  */
-export function followHostTheme(model, el, apply) {
-  function write(dark) {
-    globalThis[THEME_WRITES] = (globalThis[THEME_WRITES] ?? 0) + 1;
+export function followHostTheme(model: WidgetModel, el: HTMLElement, apply: (dark: boolean) => void): () => void {
+  function write(dark: boolean): void {
+    themeWrites[THEME_WRITES] = (themeWrites[THEME_WRITES] ?? 0) + 1;
     try {
       if (!model.get("_theme_explicit") && model.get("dark_mode") !== dark) model.set("dark_mode", dark);
       const background = dark ? THEME_BACKGROUNDS.dark : THEME_BACKGROUNDS.light;
@@ -59,7 +67,7 @@ export function followHostTheme(model, el, apply) {
       }
       model.save_changes();
     } finally {
-      globalThis[THEME_WRITES] -= 1;
+      themeWrites[THEME_WRITES] -= 1;
     }
     apply(dark);
   }
@@ -108,17 +116,17 @@ export function followHostTheme(model, el, apply) {
  * The model as the widget's components see it: listeners they add are recorded, and offAll() removes them,
  * so a removed view stops reacting to the model.
  */
-export function trackModelListeners(model) {
-  const listeners = [];
+export function trackModelListeners(model: WidgetModel): WidgetModel & { offAll(): void } {
+  const listeners: [string, (...args: any[]) => void][] = [];
   return {
-    get: (name) => model.get(name),
-    set: (name, value) => model.set(name, value),
+    get: (name: string) => model.get(name),
+    set: (name: string, value: any) => model.set(name, value),
     save_changes: () => model.save_changes(),
-    on(name, callback) {
+    on(name: string, callback: (...args: any[]) => void) {
       model.on(name, callback);
       listeners.push([name, callback]);
     },
-    off: (name, callback) => model.off(name, callback),
+    off: (name: string, callback: (...args: any[]) => void) => model.off(name, callback),
     offAll() {
       for (const [name, callback] of listeners.splice(0)) model.off(name, callback);
     },

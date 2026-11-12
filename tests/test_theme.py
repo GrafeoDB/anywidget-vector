@@ -2,8 +2,8 @@
 
 dark_mode reports the current theme and follows the host page until a theme is
 chosen (constructor, Python after display, or the settings toggle), which sets
-_theme_explicit. A chosen background sets _background_explicit. The JS side
-(ui/theme.js) runs in Node against a small fake page and model.
+_theme_explicit. A chosen background sets _background_explicit. The TS side
+(ui/theme.ts) runs in Node against a small fake page and model.
 """
 
 from __future__ import annotations
@@ -15,11 +15,23 @@ import pytest
 import traitlets
 
 from anywidget_vector import VectorSpace
-from anywidget_vector.ui import _strip_imports_exports
-from tests.support import NODE, run_node_module
+from tests.support import NODE_RUNS_TS, run_node_ts_module
 
-THEME_JS = Path(__file__).resolve().parent.parent / "src" / "anywidget_vector" / "ui" / "theme.js"
-needs_node = pytest.mark.skipif(NODE is None, reason="Node.js is not installed")
+THEME_TS = Path(__file__).resolve().parent.parent / "src" / "anywidget_vector" / "ui" / "theme.ts"
+needs_node = pytest.mark.skipif(not NODE_RUNS_TS, reason="Node.js 22.18 or later is not installed")
+
+
+def _theme_source(strip_exports: bool = False) -> str:
+    """theme.ts for inlining in a test script: drop the import lines; Node strips the types from the .ts script."""
+    lines = []
+    for line in THEME_TS.read_text(encoding="utf-8").splitlines():
+        if line.startswith("import "):
+            continue
+        if strip_exports and line.startswith("export "):
+            line = line.replace("export ", "", 1)
+        lines.append(line)
+    return "\n".join(lines)
+
 
 # A page (html and body with attributes and classes), MutationObserver, matchMedia and an anywidget-like model
 # whose set() fires change events synchronously, like Backbone
@@ -85,8 +97,8 @@ const results = {};
 
 
 def _run_theme(test_code: str, tmp_path: Path) -> dict:
-    theme = _strip_imports_exports(THEME_JS.read_text(encoding="utf-8"))
-    out = run_node_module(FAKE_PAGE + theme + test_code + "\nconsole.log(JSON.stringify(results));", tmp_path)
+    script = FAKE_PAGE + _theme_source() + test_code + "\nconsole.log(JSON.stringify(results));"
+    out = run_node_ts_module(script, tmp_path)
     return json.loads(out)
 
 
@@ -165,7 +177,7 @@ results.laterView = later;
     def test_a_second_view_does_not_take_the_first_views_updates_for_a_choice(self, tmp_path):
         # As in anywidget: each view gets its own proxy of the shared model, and the second view comes from a
         # second copy of the module (a cell run again)
-        theme = _strip_imports_exports(THEME_JS.read_text(encoding="utf-8"))
+        theme = _theme_source(strip_exports=True)
         result = _run_theme(
             f"""
 const secondCopy = (() => {{

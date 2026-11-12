@@ -1,10 +1,10 @@
 """Tests for the ESM bundle built by ``anywidget_vector.ui``.
 
-The bundler concatenates every JS file into one module, strips imports and
-exports, and renames each backend's ``executeQuery``/``toPoints``. These tests
-check that the result is still a valid module, that every renamed function
-exists, that the browser engine version is pinned exactly once, and they run
-the shipped backend code in Node against engine-shaped results.
+The front end is TypeScript (src/**/*.ts), bundled by esbuild (scripts/build-esm.mjs) into
+ui/dist/widget.js, which the Python side inlines after the vendored Three.js. These tests
+check the produced string (and parse it with Node.js), the single pinned WASM engine
+version, and run the shipped backend modules (imported as .ts, Node strips the types)
+in Node against engine-shaped results.
 """
 
 from __future__ import annotations
@@ -20,15 +20,19 @@ import pytest
 from packaging.requirements import Requirement
 from packaging.version import Version
 
-from anywidget_vector.ui import _backend_clients, _strip_imports_exports, get_esm, get_vendor_js
-from tests.support import NODE, run_node_module
+from anywidget_vector.ui import get_esm, get_vendor_js
+from tests.support import NODE, NODE_RUNS_TS, run_node_module
 
 ROOT = Path(__file__).resolve().parent.parent
 PACKAGE = ROOT / "src" / "anywidget_vector"
-needs_node = pytest.mark.skipif(NODE is None, reason="Node.js is not installed")
+needs_node = pytest.mark.skipif(not NODE_RUNS_TS, reason="Node.js 22.18 or later is not installed")
 
 TOP_LEVEL_FUNCTION = re.compile(r"^(?:async\s+)?function\s+(\w+)\s*\(", re.MULTILINE)
 TOP_LEVEL_BINDING = re.compile(r"^(?:const|let|var)\s+(\w+)", re.MULTILINE)
+
+
+def _src_uri(*parts: str) -> str:
+    return PACKAGE.joinpath(*parts).as_uri()
 
 
 @pytest.fixture(scope="module")
@@ -36,18 +40,30 @@ def esm() -> str:
     return get_esm()
 
 
-def _wasm_version(esm: str) -> str:
-    match = re.search(r'^const GRAFEO_WASM_VERSION = "([^"]+)";$', esm, re.MULTILINE)
-    assert match, "GRAFEO_WASM_VERSION is not defined in the bundle"
+def _wasm_version() -> str:
+    match = re.search(
+        r'^export const GRAFEO_WASM_VERSION = "([^"]+)";$',
+        (PACKAGE / "backends" / "grafeo" / "embed.ts").read_text(encoding="utf-8"),
+        re.MULTILINE,
+    )
+    assert match, "GRAFEO_WASM_VERSION is not defined in backends/grafeo/embed.ts"
     return match.group(1)
 
 
+def _run_node(*args: str) -> str:
+    assert NODE is not None
+    proc = subprocess.run([NODE, *args], capture_output=True, text=True, encoding="utf-8", cwd=ROOT, check=False)
+    assert proc.returncode == 0, f"node {' '.join(args)} failed:\n{proc.stdout}\n{proc.stderr}"
+    return proc.stdout
+
+
 class TestBundleStructure:
-    def test_get_esm_no_imports_and_only_default_export(self, esm):
+    def test_get_esm_no_imports_and_one_default_export(self, esm):
         imports = [line for line in esm.splitlines() if line.lstrip().startswith("import ")]
-        exports = [line for line in esm.splitlines() if line.lstrip().startswith("export ")]
         assert imports == []
-        assert exports == ["export default { render };"]
+        assert not re.search(r"""\bfrom\s*["']https?://""", esm)
+        assert re.search(r"export \{\s*\w+ as default\s*\};", esm)
+        assert esm.count("export ") == 1
 
     def test_the_module_loads_no_code_from_a_cdn(self, esm):
         # Three.js is bundled; the only remote code is the Grafeo WASM engine, loaded in WASM mode
@@ -65,21 +81,6 @@ class TestBundleStructure:
     @pytest.mark.parametrize(
         "name",
         [
-            "qdrantExecute",
-            "qdrantToPoints",
-            "pineconeExecute",
-            "pineconeToPoints",
-            "weaviateExecute",
-            "weaviateToPoints",
-            "grafeoServerExecute",
-            "grafeoServerToPoints",
-            "grafeoEmbedConnect",
-            "grafeoEmbedDisconnect",
-            "grafeoEmbedIsConnected",
-            "grafeoEmbedExecuteQuery",
-            "grafeoEmbedToPoints",
-            "grafeoRowToPoint",
-            "executeBackendQuery",
             "createCanvas",
             "createToolbar",
             "createSidebar",
@@ -89,50 +90,87 @@ class TestBundleStructure:
             "trackModelListeners",
             "startQuery",
             "isLatestQuery",
+            "executeBackendQuery",
             "render",
         ],
     )
     def test_get_esm_defines_function(self, esm, name):
         assert name in TOP_LEVEL_FUNCTION.findall(esm)
 
-    def test_get_esm_no_unrenamed_backend_functions(self, esm):
-        names = set(TOP_LEVEL_FUNCTION.findall(esm))
-        assert not names & {"executeQuery", "toPoints", "connect", "disconnect", "isConnected"}
-
-    def test_strip_imports_exports(self):
-        code = 'import { A } from "./a.js";\nexport const B = 1;\nexport async function c() {}\nexport default {};\n'
-        assert _strip_imports_exports(code) == "const B = 1;\nasync function c() {}\n"
-
     @needs_node
     def test_get_esm_parses_as_module(self, esm, tmp_path):
         bundle = tmp_path / "bundle.mjs"
         bundle.write_text(esm, encoding="utf-8")
-        assert NODE is not None
-        proc = subprocess.run([NODE, "--check", str(bundle)], capture_output=True, text=True, check=False)
-        assert proc.returncode == 0, proc.stderr
+        _run_node("--check", str(bundle))
 
     @needs_node
-    @pytest.mark.parametrize(
-        "path",
-        sorted(str(p.relative_to(PACKAGE)) for p in PACKAGE.rglob("*.js")),
-    )
-    def test_each_js_file_parses_after_strip(self, path, tmp_path):
-        module = tmp_path / "module.mjs"
-        module.write_text(_strip_imports_exports((PACKAGE / path).read_text(encoding="utf-8")), encoding="utf-8")
+    def test_bundle_is_built_from_the_current_sources(self):
+        """The bundles are what esbuild makes of the TypeScript modules now (CI installs the root devDependencies)."""
+        if not (ROOT / "node_modules" / "esbuild").exists():
+            pytest.skip("esbuild is not installed: npm ci in the package root")
+        _run_node("scripts/build-esm.mjs", "--check")
+
+    @needs_node
+    def test_typecheck_passes(self):
+        """tsc --noEmit is clean over src/ and tests/js (CI installs the root devDependencies)."""
+        if not (ROOT / "node_modules" / "typescript").exists():
+            pytest.skip("typescript is not installed: npm ci in the package root")
+        _run_node("node_modules/typescript/bin/tsc", "--noEmit")
+
+    @needs_node
+    def test_javascript(self):
+        """The JavaScript tests (tests/js/*.test.ts) pass: they mount the front end in jsdom with a plain model."""
+        tests = sorted(str(path) for path in (ROOT / "tests" / "js").glob("*.test.ts"))
+        assert tests, "no JavaScript tests found in tests/js"
+        if not (ROOT / "tests" / "js" / "node_modules" / "jsdom").exists():
+            pytest.skip("jsdom is not installed: npm ci --prefix tests/js")
+        _run_node("--test", *tests)
+
+    @needs_node
+    def test_bundle_loads_without_a_network(self, esm, tmp_path):
+        """Node imports the module as the widget ships it, vendored Three.js included, with no stub.
+
+        It imports no https: URL, so the module loading at all shows nothing comes from a CDN, and the
+        bundle finds the vendored ``anywidgetVectorVendor`` binding inlined in front of it.
+        """
+        bundle = tmp_path / "widget.mjs"
+        bundle.write_text(esm, encoding="utf-8")
+        script = f"const m = await import({json.dumps(bundle.as_uri())}); console.log(typeof m.default.render)"
+        out = _run_node("--input-type=module", "-e", script)
+        assert out.strip() == "function"
+
+    @needs_node
+    def test_export_page_script_finds_the_vendored_three(self, tmp_path):
+        """The export page's module script (vendored Three.js, DATA/OPTIONS, dist/export.js) runs up to the DOM.
+
+        Node has no DOM, so ``document.getElementById`` throws a sentinel: reaching it shows the renderer
+        resolved ``anywidgetVectorVendor`` from the vendored code in the same module.
+        """
+        from anywidget_vector import VectorSpace
+
+        page = VectorSpace(points=[{"id": "a", "x": 0, "y": 0, "z": 0}]).to_html()
+        match = re.search(r'<script type="module">\n(.*)</script>', page, re.DOTALL)
+        assert match, "the export page has one module script"
+        script = tmp_path / "page.mjs"
+        script.write_text(
+            'globalThis.document = { getElementById() { throw new Error("reached the DOM"); } };\n' + match.group(1),
+            encoding="utf-8",
+        )
         assert NODE is not None
-        proc = subprocess.run([NODE, "--check", str(module)], capture_output=True, text=True, check=False)
-        assert proc.returncode == 0, proc.stderr
+        proc = subprocess.run([NODE, str(script)], capture_output=True, text=True, encoding="utf-8", check=False)
+        assert "reached the DOM" in proc.stderr, proc.stderr
 
 
 class TestWasmPin:
     def test_wasm_package_referenced_once(self, esm):
         assert esm.count("@grafeo-db/wasm@") == 1
         assert "esm.sh/@grafeo-db" not in esm
-        assert "const GRAFEO_WASM_CDN = `https://cdn.jsdelivr.net/npm/@grafeo-db/wasm@${GRAFEO_WASM_VERSION}`;" in esm
+        cdn_re = r"\b(?:var|const) GRAFEO_WASM_CDN = `https://cdn\.jsdelivr\.net/npm/@grafeo-db/wasm@\$\{GRAFEO_WASM_VERSION\}`;"
+        assert re.search(cdn_re, esm)
 
     def test_wasm_version_is_exact(self, esm):
         # An exact npm version (a pre-release such as 0.6.0-beta.1 included), never a range
-        assert re.fullmatch(r"\d+\.\d+\.\d+(?:-[0-9A-Za-z]+(?:\.[0-9A-Za-z]+)*)?", _wasm_version(esm))
+        assert re.fullmatch(r"\d+\.\d+\.\d+(?:-[0-9A-Za-z]+(?:\.[0-9A-Za-z]+)*)?", _wasm_version())
         assert esm.count("GRAFEO_WASM_VERSION = ") == 1
 
     def test_wasm_version_in_lockstep_with_python_pin(self, esm):
@@ -144,9 +182,9 @@ class TestWasmPin:
         lower = [spec.version for spec in specifier if spec.operator in (">=", "~=", "==")]
         assert len(lower) == 1, grafeo_pin
         # npm writes 0.6.0-beta.1 where PyPI writes 0.6.0b1: compare them as versions
-        wasm = Version(_wasm_version(esm))
+        wasm = Version(_wasm_version())
         assert Version(lower[0]) == wasm, (
-            "bump GRAFEO_WASM_VERSION in backends/grafeo/embed.js together with the grafeo extra"
+            "bump GRAFEO_WASM_VERSION in backends/grafeo/embed.ts together with the grafeo extra"
         )
         assert specifier.contains(wasm, prereleases=True), (grafeo_pin, str(wasm))
 
@@ -158,8 +196,27 @@ class TestWasmPin:
 
 
 def _backend_harness(test_code: str) -> str:
-    """Shipped backend code (after strip and rename) followed by test code in the same scope."""
-    return _backend_clients() + "\n// === test ===\n" + test_code
+    """The shipped backend and query modules (imported as .ts), aliased like render() calls them, plus test code."""
+    embed = json.dumps(_src_uri("backends", "grafeo", "embed.ts"))
+    server = json.dumps(_src_uri("backends", "grafeo", "browser.ts"))
+    query = json.dumps(_src_uri("ui", "query.ts"))
+    return f"""
+import * as grafeoEmbed from {embed};
+import * as grafeoServer from {server};
+import {{ startQuery, isLatestQuery, executeBackendQuery }} from {query};
+const grafeoEmbedConnect = grafeoEmbed.connect;
+const grafeoEmbedDisconnect = grafeoEmbed.disconnect;
+const grafeoEmbedIsConnected = grafeoEmbed.isConnected;
+const grafeoEmbedExecuteQuery = grafeoEmbed.executeQuery;
+const grafeoEmbedToPoints = grafeoEmbed.toPoints;
+const loadWasmBindings = grafeoEmbed.loadWasmBindings;
+const wasmBindingsKey = grafeoEmbed.wasmBindingsKey;
+const GRAFEO_WASM_CDN = grafeoEmbed.GRAFEO_WASM_CDN;
+const grafeoServerExecute = grafeoServer.executeQuery;
+const grafeoServerToPoints = grafeoServer.toPoints;
+// === test ===
+{test_code}
+"""
 
 
 @needs_node
@@ -303,6 +360,56 @@ console.log(JSON.stringify({ before, after: grafeoEmbedIsConnected(), log }));
             ["free"],
         ]
 
+    def test_pinecone_fetch_by_ids_encodes_ids_and_keeps_the_namespace(self, tmp_path):
+        client = json.dumps(_src_uri("backends", "pinecone", "client.ts"))
+        out = run_node_module(
+            f"""
+import {{ executeQuery }} from {client};
+const urls = [];
+globalThis.fetch = async (url) => {{ urls.push(url); return {{ ok: true, json: async () => ({{}}) }}; }};
+await executeQuery('{{"ids": ["a&b", "c#d"]}}', {{ url: "https://pc", apiKey: "k", namespace: "docs" }});
+console.log(JSON.stringify(urls));
+""",
+            tmp_path,
+        )
+        (url,) = json.loads(out)
+        assert url == "https://pc/vectors/fetch?ids=a%26b&ids=c%23d&namespace=docs"
+
+    def test_pinecone_fetch_response_becomes_points(self, tmp_path):
+        # /vectors/fetch answers with records keyed by id under `vectors`, not a `matches` list
+        client = json.dumps(_src_uri("backends", "pinecone", "client.ts"))
+        out = run_node_module(
+            f"""
+import {{ toPoints }} from {client};
+const response = {{
+  namespace: "docs",
+  vectors: {{ a: {{ id: "a", values: [1, 2, 3, 4], metadata: {{ label: "A" }} }} }},
+}};
+console.log(JSON.stringify(toPoints(response)));
+""",
+            tmp_path,
+        )
+        assert json.loads(out) == [{"id": "a", "x": 1, "y": 2, "z": 3, "vector": [1, 2, 3, 4], "label": "A"}]
+
+    def test_wasm_concurrent_connects_create_one_database(self, tmp_path):
+        out = run_node_module(
+            _backend_harness(
+                """
+let created = 0;
+class FakeDatabase { constructor() { created += 1; } free() {} }
+let release;
+const loaded = new Promise((resolve) => { release = () => resolve({ Database: FakeDatabase }); });
+globalThis[wasmBindingsKey(GRAFEO_WASM_CDN)] = loaded;
+const both = Promise.all([grafeoEmbedConnect(), grafeoEmbedConnect()]);
+release();
+await both;
+console.log(JSON.stringify({ created, connected: grafeoEmbedIsConnected() }));
+"""
+            ),
+            tmp_path,
+        )
+        assert json.loads(out) == {"created": 1, "connected": True}
+
     @pytest.mark.parametrize("content_type", ["application/wasm", "application/octet-stream"])
     def test_wasm_loader_wires_glue_and_binary(self, tmp_path, content_type):
         """The bundler-target wiring: import the glue, instantiate the binary, hand exports to the glue."""
@@ -346,8 +453,9 @@ console.log(JSON.stringify({{ ready: new bindings.Database().ready, same: bindin
         (pkg / "grafeo_wasm_bg.js").write_text(
             "export let calls = 0;\nexport function __wbg_set_wasm() { calls += 1; }\n", encoding="utf-8"
         )
+        embed_uri = json.dumps(_src_uri("backends", "grafeo", "embed.ts"))
         for name in ("copy1.mjs", "copy2.mjs"):
-            (tmp_path / name).write_text(_backend_clients() + "\nexport { loadWasmBindings };\n", encoding="utf-8")
+            (tmp_path / name).write_text(f"export {{ loadWasmBindings }} from {embed_uri};\n", encoding="utf-8")
         out = run_node_module(
             f"""
 import {{ pathToFileURL }} from "node:url";
@@ -379,10 +487,8 @@ console.log(JSON.stringify([isLatestQuery(a, first), isLatestQuery(a, second), i
         assert json.loads(out) == [False, True, True]
 
     def test_properties_row_renders_data_as_text(self, tmp_path):
-        icons = _strip_imports_exports((PACKAGE / "static" / "icons.js").read_text(encoding="utf-8"))
-        properties = _strip_imports_exports((PACKAGE / "ui" / "properties.js").read_text(encoding="utf-8"))
         fake_dom = """
-const document = {
+globalThis.document = {
   createElement(tag) {
     return {
       tag, children: [], className: "", title: "", text: "", html: null,
@@ -395,17 +501,18 @@ const document = {
   },
 };
 """
-        test_code = """
+        test_code = f"""
+const {{ addPropertyRow }} = await import({json.dumps(_src_uri("ui", "properties.ts"))});
 const container = document.createElement("div");
 addPropertyRow(container, "<b>key</b>", '<img src=x onerror="alert(1)">');
 const row = container.children[0];
-console.log(JSON.stringify({
+console.log(JSON.stringify({{
   html: [row.html, ...row.children.map((c) => c.html)],
   text: row.children.map((c) => c.textContent),
   title: row.children[1].title,
-}));
+}}));
 """
-        out = run_node_module(fake_dom + icons + properties + test_code, tmp_path)
+        out = run_node_module(fake_dom + test_code, tmp_path)
         result = json.loads(out)
         assert result["html"] == [None, None, None]
         assert result["text"] == ["<b>key</b>", '<img src=x onerror="alert(1)">']
@@ -414,13 +521,13 @@ console.log(JSON.stringify({
 
 class TestNoMarkupFromPointData:
     def test_canvas_tooltip_uses_text_content(self):
-        canvas = (PACKAGE / "ui" / "canvas.js").read_text(encoding="utf-8")
+        canvas = (PACKAGE / "ui" / "canvas.ts").read_text(encoding="utf-8")
         body = canvas[canvas.index("function showTooltip(") : canvas.index("function hideTooltip(")]
         assert "innerHTML" not in body
         assert "textContent" in body
 
     def test_sidebar_stat_row_uses_text_content(self):
-        sidebar = (PACKAGE / "ui" / "sidebar.js").read_text(encoding="utf-8")
+        sidebar = (PACKAGE / "ui" / "sidebar.ts").read_text(encoding="utf-8")
         body = sidebar[sidebar.index("function addStatRow(") : sidebar.index("function rangeStr(")]
         assert "innerHTML" not in body
 
@@ -428,7 +535,7 @@ class TestNoMarkupFromPointData:
 class TestVendoredThree:
     def test_vendor_bundle_is_inlined_once(self, esm):
         assert esm.count(get_vendor_js()) == 1
-        assert "const { THREE, OrbitControls } = anywidgetVectorVendor;" in esm
+        assert "anywidgetVectorVendor" in esm
 
     def test_vendor_bundle_cannot_end_an_html_script(self):
         # to_html() inlines it in a <script> element
@@ -440,7 +547,7 @@ class TestVendoredThree:
 
     @needs_node
     def test_every_three_name_the_code_uses_is_bundled(self, tmp_path):
-        sources = [*(PACKAGE / "ui").glob("*.js"), PACKAGE / "widget.py"]
+        sources = [*(PACKAGE / "ui").glob("*.ts"), PACKAGE / "widget.py"]
         used = sorted({name for path in sources for name in re.findall(r"THREE\.(\w+)", path.read_text("utf-8"))})
         out = run_node_module(
             get_vendor_js()

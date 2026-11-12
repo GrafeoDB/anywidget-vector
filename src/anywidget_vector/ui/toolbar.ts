@@ -1,14 +1,20 @@
 // Toolbar component for VectorSpace widget
-import { ICONS } from "../static/icons.js";
+import { ICONS } from "../static/icons.ts";
+import type { ToolbarCallbacks, WidgetModel } from "./types.ts";
 
-export function createToolbar(model, callbacks) {
+export function createToolbar(model: WidgetModel, callbacks: ToolbarCallbacks): {
+  element: HTMLDivElement;
+  runBtn: HTMLButtonElement;
+  setLoading: (loading: boolean) => void;
+  setFilterCount: (matched: number, total: number) => void;
+} {
   const toolbar = document.createElement("div");
   toolbar.className = "avs-toolbar";
 
   // Sidebar toggle (left, explorer panel)
   const sidebarBtn = document.createElement("button");
   sidebarBtn.className = "avs-btn";
-  sidebarBtn.innerHTML = ICONS.sidebar || ICONS.menu || '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/></svg>';
+  sidebarBtn.innerHTML = ICONS.sidebar;
   sidebarBtn.title = "Toggle explorer";
   sidebarBtn.addEventListener("click", () => callbacks.onToggleSidebar?.());
   toolbar.appendChild(sidebarBtn);
@@ -25,7 +31,7 @@ export function createToolbar(model, callbacks) {
     model.save_changes();
     callbacks.onFilterInput?.(queryInput.value);
   });
-  queryInput.addEventListener("keydown", (e) => {
+  queryInput.addEventListener("keydown", (e: KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       callbacks.onRunQuery?.();
@@ -86,7 +92,7 @@ export function createToolbar(model, callbacks) {
   return {
     element: toolbar,
     runBtn,
-    setLoading: (loading) => {
+    setLoading: (loading: boolean) => {
       if (loading) {
         runBtn.innerHTML = ICONS.loader;
         runBtn.classList.add("avs-loading");
@@ -97,7 +103,7 @@ export function createToolbar(model, callbacks) {
         runBtn.disabled = false;
       }
     },
-    setFilterCount: (matched, total) => {
+    setFilterCount: (matched: number, total: number) => {
       if (matched < total) {
         filterCount.textContent = `${matched}/${total}`;
         filterCount.style.display = "";
@@ -108,7 +114,7 @@ export function createToolbar(model, callbacks) {
   };
 }
 
-function updateStatusDot(dot, status) {
+function updateStatusDot(dot: HTMLElement, status: string): void {
   dot.className = `avs-status-dot avs-status-${status}`;
 }
 

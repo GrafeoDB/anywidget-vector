@@ -1,9 +1,10 @@
 /**
  * Left sidebar: Collections browser + Dimension/Cluster Explorer.
  */
-import { ICONS } from "../static/icons.js";
+import { ICONS } from "../static/icons.ts";
+import type { Panel, PanelCallbacks, PointData, WidgetModel } from "./types.ts";
 
-export function createSidebar(model, callbacks) {
+export function createSidebar(model: WidgetModel, callbacks: PanelCallbacks): Panel {
   const panel = document.createElement("div");
   panel.className = "avs-panel avs-panel-left";
 
@@ -87,7 +88,7 @@ export function createSidebar(model, callbacks) {
 
   function updateDimensions() {
     dimContent.innerHTML = "";
-    const points = model.get("points") || [];
+    const points = (model.get("points") ?? []) as PointData[];
 
     if (points.length === 0) {
       dimContent.innerHTML = '<div class="avs-note">Load data to see dimensions</div>';
@@ -102,15 +103,15 @@ export function createSidebar(model, callbacks) {
     addStatRow(dimContent, "Dimensions", dims > 3 ? dims + "D → 3D" : "3D");
 
     // Axis mappings
-    const axisLabels = model.get("axis_labels") || { x: "X", y: "Y", z: "Z" };
+    const axisLabels = (model.get("axis_labels") ?? { x: "X", y: "Y", z: "Z" }) as Record<string, string>;
     addStatRow(dimContent, "X axis", axisLabels.x || "X");
     addStatRow(dimContent, "Y axis", axisLabels.y || "Y");
     addStatRow(dimContent, "Z axis", axisLabels.z || "Z");
 
     // Compute basic stats
-    const xs = points.map((p) => p.x ?? 0);
-    const ys = points.map((p) => p.y ?? 0);
-    const zs = points.map((p) => p.z ?? 0);
+    const xs = points.map((p: PointData) => p.x ?? 0);
+    const ys = points.map((p: PointData) => p.y ?? 0);
+    const zs = points.map((p: PointData) => p.z ?? 0);
     addStatRow(dimContent, "X range", rangeStr(xs));
     addStatRow(dimContent, "Y range", rangeStr(ys));
     addStatRow(dimContent, "Z range", rangeStr(zs));
@@ -121,11 +122,11 @@ export function createSidebar(model, callbacks) {
     const shapeField = model.get("shape_field");
     if (colorField) addStatRow(dimContent, "Color", colorField);
     if (sizeField) {
-      const sizeRange = model.get("size_range") || [0.02, 0.1];
+      const sizeRange = (model.get("size_range") ?? [0.02, 0.1]) as number[];
       addStatRow(dimContent, "Size", sizeField + " [" + sizeRange[0] + "," + sizeRange[1] + "]");
     }
     if (shapeField) {
-      const shapeMap = model.get("shape_map") || {};
+      const shapeMap = (model.get("shape_map") ?? {}) as Record<string, string>;
       const shapes = Object.values(shapeMap);
       const unique = [...new Set(shapes)];
       addStatRow(dimContent, "Shape", shapeField + " (" + unique.length + " shapes)");
@@ -141,10 +142,10 @@ export function createSidebar(model, callbacks) {
       return;
     }
 
-    const points = model.get("points") || [];
-    const groups = {};
-    points.forEach((p) => {
-      const val = p[colorField] ?? "unknown";
+    const points = (model.get("points") ?? []) as PointData[];
+    const groups: Record<string, number> = {};
+    points.forEach((p: PointData) => {
+      const val = String(p[colorField as string] ?? "unknown");
       groups[val] = (groups[val] || 0) + 1;
     });
 
@@ -207,13 +208,13 @@ export function createSidebar(model, callbacks) {
   metricSelect.addEventListener("change", () => {
     model.set("distance_metric", metricSelect.value);
     // Auto-enable connections when a point is selected
-    const selected = model.get("selected_points") || [];
+    const selected = (model.get("selected_points") ?? []) as string[];
     if (selected.length === 1) {
       model.set("reference_point", selected[0]);
       if (!model.get("show_connections") || model.get("k_neighbors") === 0) {
         model.set("k_neighbors", 5);
         model.set("show_connections", true);
-        kInput.value = 5;
+        kInput.value = "5";
       }
     }
     model.save_changes();
@@ -253,19 +254,19 @@ export function createSidebar(model, callbacks) {
   inner.appendChild(distSection);
 
   function updateDistanceInfo() {
-    const selected = model.get("selected_points") || [];
+    const selected = (model.get("selected_points") ?? []) as string[];
     if (selected.length === 0) {
       distInfo.textContent = "Select a point to see distances";
       return;
     }
-    const points = model.get("points") || [];
-    const ref = points.find(p => p.id === selected[0]);
+    const points = (model.get("points") ?? []) as PointData[];
+    const ref = points.find((p: PointData) => p.id === selected[0]);
     if (!ref) return;
 
     const metric = metricSelect.value;
-    const others = points.filter(p => p.id !== ref.id);
+    const others = points.filter((p: PointData) => p.id !== ref.id);
 
-    function dist(a, b) {
+    function dist(a: PointData, b: PointData): number {
       const dx = (a.x ?? 0) - (b.x ?? 0), dy = (a.y ?? 0) - (b.y ?? 0), dz = (a.z ?? 0) - (b.z ?? 0);
       if (metric === "manhattan") return Math.abs(dx) + Math.abs(dy) + Math.abs(dz);
       if (metric === "cosine") {
@@ -278,7 +279,7 @@ export function createSidebar(model, callbacks) {
       return Math.sqrt(dx*dx + dy*dy + dz*dz);
     }
 
-    const sorted = others.map(p => ({ id: p.id, label: p.label || p.id, d: dist(ref, p) }))
+    const sorted = others.map((p: PointData) => ({ id: p.id, label: String(p.label || p.id), d: dist(ref, p) }))
       .sort((a, b) => a.d - b.d).slice(0, 5);
 
     distInfo.innerHTML = "<strong>" + escapeHtml(ref.label || ref.id) + "</strong><br>" +
@@ -316,7 +317,7 @@ export function createSidebar(model, callbacks) {
 
 // === Helpers ===
 
-function addStatRow(container, key, value) {
+function addStatRow(container: HTMLElement, key: string, value: string | number): void {
   const row = document.createElement("div");
   row.className = "avs-property-row";
   const keyEl = document.createElement("span");
@@ -329,14 +330,14 @@ function addStatRow(container, key, value) {
   container.appendChild(row);
 }
 
-function rangeStr(values) {
+function rangeStr(values: number[]): string {
   if (values.length === 0) return "—";
   const min = Math.min(...values);
   const max = Math.max(...values);
   return min.toFixed(2) + " … " + max.toFixed(2);
 }
 
-function escapeHtml(str) {
+function escapeHtml(str: unknown): string {
   // String(): labels and ids can be numbers
   return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }

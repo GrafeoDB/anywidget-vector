@@ -1,10 +1,17 @@
-"""UI module aggregation - loads CSS and JS components."""
+"""UI module for anywidget-vector: CSS, the vendored Three.js, and the esbuild bundle.
+
+The front end is TypeScript (ui/*.ts, backends/**/*.ts, static/*.ts), bundled by
+esbuild into ui/dist/widget.js (scripts/build-esm.mjs, `npm run build`; CI and
+tests/test_ui_bundle.py fail when it is stale), plus the standalone export page's
+renderer into ui/dist/export.js (inlined by widget.py's to_html). Three.js and OrbitControls
+(vendor/three.min.js, built by scripts/vendor) are inlined in front of the bundle
+in the same ES module: one top-level ``var anywidgetVectorVendor``, a module-scoped
+binding that the bundle reads by name through ui/vendor-globals.ts.
+"""
 
 from pathlib import Path
 
 _UI_DIR = Path(__file__).parent
-_STATIC_DIR = _UI_DIR.parent / "static"
-_BACKENDS_DIR = _UI_DIR.parent / "backends"
 
 
 def _read_file(path: Path) -> str:
@@ -13,328 +20,28 @@ def _read_file(path: Path) -> str:
 
 
 def get_vendor_js() -> str:
-    """Three.js and OrbitControls, bundled (a script that sets ``anywidgetVectorVendor``; built by scripts/vendor)."""
+    """Three.js and OrbitControls, bundled (one ``var anywidgetVectorVendor``; built by scripts/vendor)."""
     return _read_file(_UI_DIR / "vendor" / "three.min.js")
 
 
+def get_export_js() -> str:
+    """The standalone export page's renderer: ``dist/export.js``, bundled from ``export.ts`` by
+    ``scripts/build-esm.mjs`` the same way as ``dist/widget.js``. ``widget.py``'s ``to_html`` inlines it into
+    ``export.html`` after the page's ``DATA``/``OPTIONS`` constants."""
+    return _read_file(_UI_DIR / "dist" / "export.js")
+
+
 def get_css() -> str:
-    """Get aggregated CSS."""
+    """Get the widget's CSS."""
     return _read_file(_UI_DIR / "styles.css")
 
 
 def get_esm() -> str:
-    """Get aggregated ESM JavaScript.
-
-    Combines all UI components into a single module.
-    """
-    # Read component files
-    icons_js = _read_file(_STATIC_DIR / "icons.js")
-    constants_js = _read_file(_UI_DIR / "constants.js")
-    theme_js = _read_file(_UI_DIR / "theme.js")
-    sidebar_js = _read_file(_UI_DIR / "sidebar.js")
-    toolbar_js = _read_file(_UI_DIR / "toolbar.js")
-    settings_js = _read_file(_UI_DIR / "settings.js")
-    properties_js = _read_file(_UI_DIR / "properties.js")
-    canvas_js = _read_file(_UI_DIR / "canvas.js")
-
-    # Build combined ESM
-    esm = f"""
+    """The widget's ES module: the vendored Three.js, then the esbuild bundle of the TypeScript front end."""
+    return f"""\
 // === Auto-generated ESM bundle for anywidget-vector ===
 // Three.js and OrbitControls are bundled (vendor/three.min.js, licenses in vendor/three.LICENSES.txt): the widget
 // loads no code from a CDN, except the Grafeo WASM engine in WASM mode
 {get_vendor_js()}
-const {{ THREE, OrbitControls }} = anywidgetVectorVendor;
-
-// === Icons ===
-{_strip_imports_exports(icons_js)}
-
-// === Constants ===
-{_strip_imports_exports(constants_js)}
-
-// === Theme ===
-{_strip_imports_exports(theme_js)}
-
-{_backend_clients()}
-
-// === Sidebar (Explorer) ===
-{_strip_imports_exports(sidebar_js)}
-
-// === Toolbar ===
-{_strip_imports_exports(toolbar_js)}
-
-// === Settings Panel ===
-{_strip_imports_exports(settings_js)}
-
-// === Properties Panel ===
-{_strip_imports_exports(properties_js)}
-
-// === Canvas (Three.js) ===
-{_strip_imports_exports(canvas_js)}
-
-// === Main Render Function ===
-function render({{ model: widgetModel, el }}) {{
-  // Components see a model whose listeners are removed with the view
-  const model = trackModelListeners(widgetModel);
-  const wrapper = document.createElement("div");
-  wrapper.className = "avs-wrapper";
-
-  const _w = model.get("width");
-  const _h = model.get("height");
-  wrapper.style.width = _w > 0 ? _w + "px" : "100%";
-  if (_h > 0) {{
-    wrapper.style.height = _h + "px";
-  }} else {{
-    wrapper.style.aspectRatio = "1 / 1";
-  }}
-
-  el.appendChild(wrapper);
-
-  // Follows the page theme until the user chooses (theme.js)
-  const stopFollowingTheme = followHostTheme(model, el, (dark) => wrapper.classList.toggle("avs-dark", dark));
-
-  let sidebar = null;
-  let settingsPanel = null;
-  let propertiesPanel = null;
-  let toolbarUI = null;
-
-  if (model.get("show_toolbar")) {{
-    toolbarUI = createToolbar(model, {{
-      onRunQuery: () => runQuery(),
-      onFilterInput: (text) => {{
-        if (canvas) {{
-          const result = canvas.applyFilter(text, false);
-          if (toolbarUI) toolbarUI.setFilterCount(result.matched, result.total);
-        }}
-      }},
-      onToggleSidebar: () => sidebar?.toggle(),
-      onToggleSettings: () => {{
-        if (propertiesPanel?.isOpen()) propertiesPanel.close();
-        settingsPanel?.toggle();
-      }},
-      onToggleProperties: () => {{
-        if (settingsPanel?.isOpen()) settingsPanel.close();
-        propertiesPanel?.toggle();
-      }},
-    }});
-    wrapper.appendChild(toolbarUI.element);
-  }}
-
-  const main = document.createElement("div");
-  main.className = "avs-main";
-  wrapper.appendChild(main);
-
-  // Sidebar (left, explorer panel)
-  sidebar = createSidebar(model, {{
-    onClose: () => sidebar?.close(),
-  }});
-  main.appendChild(sidebar.element);
-
-  const canvasContainer = document.createElement("div");
-  canvasContainer.className = "avs-canvas-container";
-  canvasContainer.style.width = "100%";
-  canvasContainer.style.height = "100%";
-  main.appendChild(canvasContainer);
-
-  if (model.get("show_settings")) {{
-    settingsPanel = createSettingsPanel(model, {{
-      onClose: () => settingsPanel?.close(),
-    }});
-    main.appendChild(settingsPanel.element);
-  }}
-
-  propertiesPanel = createPropertiesPanel(model, {{
-    onClose: () => propertiesPanel?.close(),
-  }});
-  main.appendChild(propertiesPanel.element);
-  if (model.get("show_properties")) propertiesPanel.open();
-
-  const canvas = createCanvas(model, canvasContainer, {{
-    onHover: (point) => propertiesPanel?.setHoveredPoint(point),
-  }});
-
-  async function runQuery() {{
-    const query = model.get("query_input") || "";
-
-    // Apply hard client-side filter (completely hide non-matching)
-    if (canvas) {{
-      const result = canvas.applyFilter(query, true);
-      if (toolbarUI) toolbarUI.setFilterCount(result.matched, result.total);
-    }}
-
-    // Additionally run a backend query if connected
-    const backend = model.get("backend");
-    const backendInfo = BACKENDS[backend];
-    const mode = model.get("grafeo_connection_mode") || "embedded";
-    const status = model.get("connection_status");
-
-    const isBrowserSide = (backendInfo && backendInfo.side === "browser") ||
-      (backend === "grafeo" && (mode === "server" || mode === "wasm"));
-    const hasBackend = isBrowserSide || status === "connected";
-
-    if (!hasBackend) return;
-
-    // A slower, older query must not overwrite the result of a newer one
-    const ticket = startQuery(widgetModel);
-    if (toolbarUI) toolbarUI.setLoading(true);
-
-    try {{
-      model.set("query_error", null);
-      model.set("connection_status", "connecting");
-      model.save_changes();
-
-      if (isBrowserSide) {{
-        const points = await executeBackendQuery(model);
-        if (!isLatestQuery(widgetModel, ticket)) return;
-        model.set("points", points);
-        model.set("connection_status", "connected");
-        model.save_changes();
-      }} else {{
-        model.set("_execute_query", Date.now());
-        model.save_changes();
-      }}
-    }} catch (err) {{
-      if (!isLatestQuery(widgetModel, ticket)) return;
-      model.set("query_error", err.message);
-      model.set("connection_status", "error");
-      model.save_changes();
-      console.error("Query error:", err);
-    }} finally {{
-      if (toolbarUI && isLatestQuery(widgetModel, ticket)) toolbarUI.setLoading(false);
-    }}
-  }}
-
-  return () => {{
-    stopFollowingTheme();
-    model.offAll();
-    canvas.cleanup();
-  }};
-}}
-
-export default {{ render }};
-"""
-    return esm
-
-
-def _backend_clients() -> str:
-    """Browser-side backend clients plus the unified query executor.
-
-    Each client exports ``executeQuery`` and ``toPoints``; they are renamed per
-    backend so they can share one module scope. Kept separate from ``get_esm``
-    so tests can run this part in Node without Three.js.
-    """
-    qdrant_client = _read_file(_BACKENDS_DIR / "qdrant" / "client.js")
-    pinecone_client = _read_file(_BACKENDS_DIR / "pinecone" / "client.js")
-    weaviate_client = _read_file(_BACKENDS_DIR / "weaviate" / "client.js")
-    grafeo_points = _read_file(_BACKENDS_DIR / "grafeo" / "points.js")
-    grafeo_browser = _read_file(_BACKENDS_DIR / "grafeo" / "browser.js")
-    grafeo_embed = _read_file(_BACKENDS_DIR / "grafeo" / "embed.js")
-
-    return f"""// === Backend Clients ===
-// Qdrant
-{_rename_functions(qdrant_client, "qdrant")}
-
-// Pinecone
-{_rename_functions(pinecone_client, "pinecone")}
-
-// Weaviate
-{_rename_functions(weaviate_client, "weaviate")}
-
-// Grafeo result rows to points (shared by server and WASM)
-{_strip_imports_exports(grafeo_points)}
-
-// Grafeo Server
-{_rename_functions(grafeo_browser, "grafeoServer")}
-
-// Grafeo WASM (embed)
-{_prepare_grafeo_embed(grafeo_embed)}
-
-// The newest browser-side query per model; results of older ones are dropped
-const latestQuery = new WeakMap();
-
-function startQuery(model) {{
-  const ticket = (latestQuery.get(model) ?? 0) + 1;
-  latestQuery.set(model, ticket);
-  return ticket;
-}}
-
-function isLatestQuery(model, ticket) {{
-  return latestQuery.get(model) === ticket;
-}}
-
-// Unified query executor
-async function executeBackendQuery(model) {{
-  const backend = model.get("backend");
-  const query = model.get("query_input");
-  const config = model.get("backend_config") || {{}};
-  const mode = model.get("grafeo_connection_mode") || "embedded";
-
-  let response, points;
-
-  if (backend === "grafeo" && mode === "server") {{
-    const serverUrl = model.get("grafeo_server_url") || "http://localhost:7474";
-    const serverConfig = {{ ...config, url: serverUrl, language: "gql" }};
-    response = await grafeoServerExecute(query, serverConfig);
-    points = grafeoServerToPoints(response);
-  }} else if (backend === "grafeo" && mode === "wasm") {{
-    if (!grafeoEmbedIsConnected()) {{
-      await grafeoEmbedConnect();
-    }}
-    response = await grafeoEmbedExecuteQuery(query, config);
-    points = grafeoEmbedToPoints(response);
-  }} else if (backend === "qdrant") {{
-    response = await qdrantExecute(query, config);
-    points = qdrantToPoints(response);
-  }} else if (backend === "pinecone") {{
-    response = await pineconeExecute(query, config);
-    points = pineconeToPoints(response);
-  }} else if (backend === "weaviate") {{
-    const className = config.className || config.class || "Vector";
-    response = await weaviateExecute(query, config);
-    points = weaviateToPoints(response, className);
-  }} else {{
-    throw new Error(`Browser backend not supported: ${{backend}}`);
-  }}
-
-  return points;
-}}
-"""
-
-
-def _strip_imports_exports(code: str) -> str:
-    """Remove import and export statements from JS code."""
-    lines = []
-    for line in code.split("\n"):
-        stripped = line.strip()
-        if stripped.startswith("import "):
-            continue
-        if stripped.startswith("export function "):
-            line = line.replace("export function ", "function ")
-        elif stripped.startswith("export async function "):
-            line = line.replace("export async function ", "async function ")
-        elif stripped.startswith("export const "):
-            line = line.replace("export const ", "const ")
-        elif stripped.startswith("export default"):
-            continue
-        lines.append(line)
-    return "\n".join(lines)
-
-
-def _rename_functions(code: str, prefix: str) -> str:
-    """Strip imports/exports and rename functions with prefix."""
-    code = _strip_imports_exports(code)
-    # Replace async function first to avoid "async async function" double-prefix
-    code = code.replace("async function executeQuery", f"async function {prefix}Execute")
-    code = code.replace("function executeQuery", f"async function {prefix}Execute")
-    code = code.replace("function toPoints", f"function {prefix}ToPoints")
-    return code
-
-
-def _prepare_grafeo_embed(code: str) -> str:
-    """Strip imports/exports and rename for grafeo WASM embed backend."""
-    code = _strip_imports_exports(code)
-    code = code.replace("async function connect(", "async function grafeoEmbedConnect(")
-    code = code.replace("async function disconnect(", "async function grafeoEmbedDisconnect(")
-    code = code.replace("function isConnected(", "function grafeoEmbedIsConnected(")
-    code = code.replace("async function executeQuery(", "async function grafeoEmbedExecuteQuery(")
-    code = code.replace("function toPoints(", "function grafeoEmbedToPoints(")
-    return code
+// === esbuild bundle of ui/*.ts and backends (ui/dist/widget.js) ===
+{_read_file(_UI_DIR / "dist" / "widget.js")}"""
