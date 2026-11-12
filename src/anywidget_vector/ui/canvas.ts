@@ -1,10 +1,17 @@
 // 3D Canvas component using Three.js
-import * as THREE from "https://esm.sh/three@0.186.1";
-import { OrbitControls } from "https://esm.sh/three@0.186.1/addons/controls/OrbitControls.js";
-import { COLOR_SCALES, CATEGORICAL_COLORS } from "./constants.js";
+import { THREE, OrbitControls } from "./vendor-globals.ts";
+import type * as THREE_NS from "three";
+import type { OrbitControls as OrbitControlsType } from "three/addons/controls/OrbitControls.js";
+
+const mesh = (o: THREE_NS.Object3D): THREE_NS.Mesh => o as THREE_NS.Mesh;
+const mat = (o: THREE_NS.Object3D) => (o as THREE_NS.Mesh).material as THREE_NS.Material | undefined;
+
+import { COLOR_SCALES, CATEGORICAL_COLORS } from "./constants.ts";
+import { ICONS } from "../static/icons.ts";
+import type { CanvasCallbacks, PointData, WidgetModel } from "./types.ts";
 
 // Shape geometries factory
-const SHAPE_GEOMETRIES = {
+const SHAPE_GEOMETRIES: Record<string, () => THREE_NS.BufferGeometry> = {
   sphere: () => new THREE.SphereGeometry(1, 16, 16),
   cube: () => new THREE.BoxGeometry(1, 1, 1),
   cone: () => new THREE.ConeGeometry(0.7, 1.4, 16),
@@ -13,8 +20,24 @@ const SHAPE_GEOMETRIES = {
   cylinder: () => new THREE.CylinderGeometry(0.5, 0.5, 1, 16),
 };
 
+// The per-point style options (the standalone export page, ui/export.ts, builds the same shape)
+export interface PointStyleOpts {
+  colorField: string | null;
+  colorScale: string;
+  colorDomain: [number, number] | null;
+  sizeField: string | null;
+  sizeDomain?: [number, number];
+  sizeRange: number[];
+}
+
+// The resolved per-point render options
+interface CanvasOpts extends PointStyleOpts {
+  shapeField: string | null;
+  shapeMap: Record<string, string>;
+}
+
 // Distance metrics
-const DISTANCE_METRICS = {
+const DISTANCE_METRICS: Record<string, (a: PointData, b: PointData) => number> = {
   euclidean: (a, b) => {
     const dx = a.x - b.x, dy = a.y - b.y, dz = a.z - b.z;
     return Math.sqrt(dx*dx + dy*dy + dz*dz);
@@ -30,22 +53,32 @@ const DISTANCE_METRICS = {
   dot_product: (a, b) => -(a.x*b.x + a.y*b.y + a.z*b.z),
 };
 
-export function createCanvas(model, container, callbacks) {
-  let scene, camera, renderer, controls;
-  let pointsGroup, connectionsGroup;
-  let raycaster, mouse;
-  let hoveredObject = null;
-  let tooltip;
-  let axesGroup, gridHelper;
-  let animationId;
-  let resizeObserver;
-  let selectionRect, boxOverlay;
-  let selectionGroup;
-  let lassoOverlayEl, lassoSvg, lassoPathEl;
-  let isLassoing = false, lassoCoords = [];
+export function createCanvas(model: WidgetModel, container: HTMLElement, callbacks: CanvasCallbacks): { cleanup: () => void; applyFilter: (filterText: string, hard: boolean) => { matched: number; total: number } } {
+  let scene: THREE_NS.Scene;
+  let camera: THREE_NS.PerspectiveCamera;
+  let renderer: THREE_NS.WebGLRenderer;
+  let controls: OrbitControlsType;
+  let pointsGroup: THREE_NS.Group;
+  let connectionsGroup: THREE_NS.Group;
+  let raycaster: THREE_NS.Raycaster;
+  let mouse: THREE_NS.Vector2;
+  let hoveredObject: { pointIndex: number; pointId: string } | null = null;
+  let tooltip: HTMLDivElement;
+  let axesGroup: THREE_NS.Group;
+  let gridHelper: THREE_NS.GridHelper | null;
+  let animationId: number;
+  let resizeObserver: ResizeObserver;
+  let selectionRect: HTMLDivElement;
+  let boxOverlay: HTMLDivElement;
+  let selectionGroup: THREE_NS.Group;
+  let lassoOverlayEl: HTMLDivElement;
+  let lassoSvg: SVGSVGElement;
+  let lassoPathEl: SVGPolylineElement;
+  let isLassoing = false;
+  let lassoCoords: [number, number][] = [];
   let currentMode = model.get("selection_mode") || "click";
 
-  function setSelection(ids) {
+  function setSelection(ids: string[]): void {
     model.set("selected_points", ids);
     model.set("_selection_version", (model.get("_selection_version") || 0) + 1);
     model.save_changes();
@@ -96,7 +129,7 @@ export function createCanvas(model, container, callbacks) {
     controls.target.set(target[0], target[1], target[2]);
 
     // Custom smooth scroll zoom with reduced sensitivity
-    renderer.domElement.addEventListener("wheel", (e) => {
+    renderer.domElement.addEventListener("wheel", (e: WheelEvent) => {
       e.preventDefault();
       const factor = 1 + e.deltaY * 0.0003;
       const offset = camera.position.clone().sub(controls.target);
@@ -139,7 +172,7 @@ export function createCanvas(model, container, callbacks) {
     container.tabIndex = 0;
     container.style.outline = "none";
     container.addEventListener("keydown", (e) => {
-      const tag = e.target.tagName;
+      const tag = (e.target as HTMLElement).tagName;
       if (tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA") return;
 
       if (e.key === "f" || e.key === "F") {
@@ -172,9 +205,10 @@ export function createCanvas(model, container, callbacks) {
     }
   }
 
-  function addAxisLabel(text, position, color) {
+  function addAxisLabel(text: string, position: number[], color: number): void {
     const canvas = document.createElement("canvas");
     const ctx = canvas.getContext("2d");
+    if (!ctx) return;
     canvas.width = 64; canvas.height = 32;
     ctx.font = "bold 24px Arial";
     ctx.fillStyle = "#" + color.toString(16).padStart(6, "0");
@@ -190,12 +224,12 @@ export function createCanvas(model, container, callbacks) {
   function createPoints() {
     while (pointsGroup.children.length > 0) {
       const obj = pointsGroup.children[0];
-      if (obj.geometry) obj.geometry.dispose();
-      if (obj.material) obj.material.dispose();
+      if (mesh(obj).geometry) mesh(obj).geometry.dispose();
+      mat(obj)?.dispose();
       pointsGroup.remove(obj);
     }
 
-    const points = model.get("points") || [];
+    const points = (model.get("points") ?? []) as PointData[];
     if (points.length === 0) return;
 
     // Auto-scale point sizes relative to data extent
@@ -206,7 +240,7 @@ export function createCanvas(model, container, callbacks) {
     const rawRange = model.get("size_range") || [0.02, 0.06];
     const sizeRange = [rawRange[0] * scaleFactor, rawRange[1] * scaleFactor];
 
-    const opts = {
+    const opts: CanvasOpts = {
       colorField: model.get("color_field"),
       colorScale: model.get("color_scale") || "viridis",
       colorDomain: model.get("color_domain"),
@@ -218,12 +252,12 @@ export function createCanvas(model, container, callbacks) {
 
     // Compute domains
     if (opts.colorField && !opts.colorDomain) {
-      const values = points.map(p => p[opts.colorField]).filter(v => typeof v === "number");
-      if (values.length > 0) opts.colorDomain = [Math.min(...values), Math.max(...values)];
+      const values = points.map((p) => p[opts.colorField as string]).filter((v): v is number => typeof v === "number");
+      if (values.length > 0) opts.colorDomain = [Math.min(...values), Math.max(...values)] as [number, number];
     }
     if (opts.sizeField) {
-      const values = points.map(p => p[opts.sizeField]).filter(v => typeof v === "number");
-      if (values.length > 0) opts.sizeDomain = [Math.min(...values), Math.max(...values)];
+      const values = points.map((p) => p[opts.sizeField as string]).filter((v): v is number => typeof v === "number");
+      if (values.length > 0) opts.sizeDomain = [Math.min(...values), Math.max(...values)] as [number, number];
     }
 
     const useInstancing = model.get("use_instancing") && points.length > 100;
@@ -234,30 +268,9 @@ export function createCanvas(model, container, callbacks) {
     }
   }
 
-  function getPointColor(point, opts) {
-    if (point.color) return new THREE.Color(point.color);
-    if (opts.colorField && point[opts.colorField] !== undefined) {
-      const value = point[opts.colorField];
-      if (typeof value === "number") {
-        return getColorFromScale(value, opts.colorScale, opts.colorDomain);
-      }
-      return getCategoricalColor(value);
-    }
-    return new THREE.Color(0x6366f1);
-  }
-
-  function getPointSize(point, opts) {
-    if (point.size !== undefined) return point.size;
-    if (opts.sizeField && point[opts.sizeField] !== undefined && opts.sizeDomain) {
-      const [min, max] = opts.sizeDomain;
-      const t = max > min ? (point[opts.sizeField] - min) / (max - min) : 0.5;
-      return opts.sizeRange[0] + t * (opts.sizeRange[1] - opts.sizeRange[0]);
-    }
-    return (opts.sizeRange[0] + opts.sizeRange[1]) * 0.5;
-  }
-
-  function getPointShape(point, opts) {
-    if (point.shape && SHAPE_GEOMETRIES[point.shape]) return point.shape;
+  function getPointShape(point: PointData, opts: CanvasOpts): string {
+    const ownShape = point.shape as string | undefined;
+    if (ownShape && SHAPE_GEOMETRIES[ownShape]) return ownShape;
     if (opts.shapeField && point[opts.shapeField] !== undefined) {
       const value = String(point[opts.shapeField]);
       if (opts.shapeMap[value] && SHAPE_GEOMETRIES[opts.shapeMap[value]]) return opts.shapeMap[value];
@@ -267,7 +280,7 @@ export function createCanvas(model, container, callbacks) {
     return "sphere";
   }
 
-  function createIndividualPoints(points, opts) {
+  function createIndividualPoints(points: PointData[], opts: CanvasOpts): void {
     points.forEach((point, idx) => {
       const shape = getPointShape(point, opts);
       const geometry = SHAPE_GEOMETRIES[shape]();
@@ -282,8 +295,8 @@ export function createCanvas(model, container, callbacks) {
     });
   }
 
-  function createInstancedPoints(points, opts) {
-    const groups = {};
+  function createInstancedPoints(points: PointData[], opts: CanvasOpts): void {
+    const groups: Record<string, { point: PointData; idx: number }[]> = {};
     points.forEach((point, idx) => {
       const shape = getPointShape(point, opts);
       if (!groups[shape]) groups[shape] = [];
@@ -297,7 +310,7 @@ export function createCanvas(model, container, callbacks) {
       const matrix = new THREE.Matrix4();
       const colors = new Float32Array(items.length * 3);
 
-      items.forEach(({ point, idx }, i) => {
+      items.forEach(({ point }, i) => {
         const size = getPointSize(point, opts);
         const pointColor = getPointColor(point, opts);
         matrix.identity();
@@ -324,12 +337,12 @@ export function createCanvas(model, container, callbacks) {
   function createConnections() {
     while (connectionsGroup.children.length > 0) {
       const obj = connectionsGroup.children[0];
-      if (obj.geometry) obj.geometry.dispose();
-      if (obj.material) obj.material.dispose();
+      if (mesh(obj).geometry) mesh(obj).geometry.dispose();
+      mat(obj)?.dispose();
       connectionsGroup.remove(obj);
     }
 
-    const points = model.get("points") || [];
+    const points = (model.get("points") ?? []) as PointData[];
     const showConnections = model.get("show_connections");
     if (!showConnections || points.length < 2) return;
 
@@ -346,7 +359,7 @@ export function createCanvas(model, container, callbacks) {
       opacity: connectionOpacity,
     });
 
-    const computeDist = (p1, p2) => {
+    const computeDist = (p1: PointData, p2: PointData): number => {
       const fn = DISTANCE_METRICS[distanceMetric] || DISTANCE_METRICS.euclidean;
       return fn(p1, p2);
     };
@@ -360,7 +373,7 @@ export function createCanvas(model, container, callbacks) {
         dist: i === refIdx ? Infinity : computeDist(ref, p)
       })).filter(d => d.dist !== Infinity).sort((a, b) => a.dist - b.dist);
 
-      let neighbors;
+      let neighbors: { idx: number; point: PointData; dist: number }[];
       if (distanceThreshold != null) neighbors = distances.filter(d => d.dist <= distanceThreshold);
       else if (kNeighbors > 0) neighbors = distances.slice(0, kNeighbors);
       else return;
@@ -401,7 +414,7 @@ export function createCanvas(model, container, callbacks) {
     container.addEventListener("click", onClick);
   }
 
-  function onMouseMove(event) {
+  function onMouseMove(event: MouseEvent): void {
     const rect = container.getBoundingClientRect();
     mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
     mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
@@ -411,12 +424,12 @@ export function createCanvas(model, container, callbacks) {
 
     if (intersects.length > 0) {
       const hit = intersects[0];
-      const points = model.get("points") || [];
-      let pointIndex, pointId;
+      const points = (model.get("points") ?? []) as PointData[];
+      let pointIndex: number, pointId: string;
 
       if (hit.object.userData.isInstanced) {
-        pointIndex = hit.object.userData.pointIndices[hit.instanceId];
-        pointId = hit.object.userData.pointIds[hit.instanceId];
+        pointIndex = hit.object.userData.pointIndices[hit.instanceId as number];
+        pointId = hit.object.userData.pointIds[hit.instanceId as number];
       } else {
         pointIndex = hit.object.userData.pointIndex;
         pointId = hit.object.userData.pointId;
@@ -435,7 +448,7 @@ export function createCanvas(model, container, callbacks) {
     }
   }
 
-  function onClick(event) {
+  function onClick(event: MouseEvent): void {
     // Box mode handles selection via the overlay, not raycaster clicks
     if (currentMode === "box") return;
 
@@ -448,9 +461,9 @@ export function createCanvas(model, container, callbacks) {
 
     if (intersects.length > 0) {
       const hit = intersects[0];
-      let pointId;
+      let pointId: string;
       if (hit.object.userData.isInstanced) {
-        pointId = hit.object.userData.pointIds[hit.instanceId];
+        pointId = hit.object.userData.pointIds[hit.instanceId as number];
       } else {
         pointId = hit.object.userData.pointId;
       }
@@ -462,7 +475,7 @@ export function createCanvas(model, container, callbacks) {
         setSelection([pointId]);
       } else if (selectionMode === "multi") {
         if (currentSelection.includes(pointId)) {
-          setSelection(currentSelection.filter(id => id !== pointId));
+          setSelection(currentSelection.filter((id: string) => id !== pointId));
         } else {
           setSelection([...currentSelection, pointId]);
         }
@@ -479,7 +492,7 @@ export function createCanvas(model, container, callbacks) {
   }
 
   function fitToView() {
-    const points = model.get("points") || [];
+    const points = (model.get("points") ?? []) as PointData[];
     if (points.length === 0) return;
     const box = new THREE.Box3();
     points.forEach(p => box.expandByPoint(new THREE.Vector3(p.x ?? 0, p.y ?? 0, p.z ?? 0)));
@@ -542,7 +555,7 @@ export function createCanvas(model, container, callbacks) {
     lassoBtn.innerHTML = ICONS.lasso;
     lassoBtn.title = "Lasso select mode";
 
-    function setActiveMode(mode) {
+    function setActiveMode(mode: string): void {
       currentMode = mode;
       model.set("selection_mode", mode);
       model.save_changes();
@@ -646,9 +659,9 @@ export function createCanvas(model, container, callbacks) {
     });
   }
 
-  function getPointsInScreenRect(cam, points, rect, canvasWidth, canvasHeight) {
+  function getPointsInScreenRect(cam: THREE_NS.Camera, points: PointData[], rect: { x1: number; y1: number; x2: number; y2: number }, canvasWidth: number, canvasHeight: number): string[] {
     const { x1, y1, x2, y2 } = rect;
-    const selected = [];
+    const selected: string[] = [];
     points.forEach(p => {
       const pos = new THREE.Vector3(p.x ?? 0, p.y ?? 0, p.z ?? 0).project(cam);
       const sx = (pos.x * 0.5 + 0.5) * canvasWidth;
@@ -660,9 +673,9 @@ export function createCanvas(model, container, callbacks) {
     return selected;
   }
 
-  function showTooltip(event, point) {
+  function showTooltip(event: MouseEvent, point: PointData): void {
     if (!model.get("show_tooltip")) return;
-    const fields = model.get("tooltip_fields") || ["label", "x", "y", "z"];
+    const fields = (model.get("tooltip_fields") ?? ["label", "x", "y", "z"]) as string[];
     // Point data can come from a database: textContent only, never markup
     const children = [];
     if (point.label) {
@@ -735,17 +748,18 @@ export function createCanvas(model, container, callbacks) {
     resizeObserver.disconnect();
     controls.dispose();
     renderer.dispose();
-    scene.traverse((obj) => {
-      if (obj.geometry) obj.geometry.dispose();
-      if (obj.material) {
-        if (Array.isArray(obj.material)) obj.material.forEach(m => m.dispose());
-        else obj.material.dispose();
+    scene.traverse((obj: THREE_NS.Object3D) => {
+      if (mesh(obj).geometry) mesh(obj).geometry.dispose();
+      const m = mat(obj);
+      if (m) {
+        if (Array.isArray(m)) m.forEach((mm: THREE_NS.Material) => mm.dispose());
+        else m.dispose();
       }
     });
   }
 
-  function applyFilter(filterText, hard) {
-    const points = model.get("points") || [];
+  function applyFilter(filterText: string, hard: boolean): { matched: number; total: number } {
+    const points = (model.get("points") ?? []) as PointData[];
     const filter = (filterText || "").toLowerCase().trim();
     const total = points.length;
 
@@ -757,23 +771,24 @@ export function createCanvas(model, container, callbacks) {
             const m = new THREE.Matrix4();
             for (let i = 0; i < obj.userData.pointIndices.length; i++) {
               m.fromArray(obj.userData._filterOrigMatrices, i * 16);
-              obj.setMatrixAt(i, m);
+              (obj as THREE_NS.InstancedMesh).setMatrixAt(i, m);
             }
-            obj.instanceMatrix.needsUpdate = true;
+            (obj as THREE_NS.InstancedMesh).instanceMatrix.needsUpdate = true;
             obj.userData._filterOrigMatrices = null;
           }
           if (obj.userData._originalColors) {
-            const attr = obj.geometry.getAttribute("color");
+            const attr = mesh(obj).geometry.getAttribute("color");
             attr.array.set(obj.userData._originalColors);
             attr.needsUpdate = true;
             obj.userData._originalColors = null;
           }
         } else {
           obj.visible = true;
-          if (obj.material) {
-            obj.material.opacity = 1;
-            obj.material.transparent = false;
-            obj.material.needsUpdate = true;
+          const m = mat(obj);
+      if (m) {
+            m.opacity = 1;
+            m.transparent = false;
+            m.needsUpdate = true;
           }
         }
       });
@@ -799,7 +814,7 @@ export function createCanvas(model, container, callbacks) {
             const buf = new Float32Array(indices.length * 16);
             const m = new THREE.Matrix4();
             for (let i = 0; i < indices.length; i++) {
-              obj.getMatrixAt(i, m);
+              (obj as THREE_NS.InstancedMesh).getMatrixAt(i, m);
               m.toArray(buf, i * 16);
             }
             obj.userData._filterOrigMatrices = buf;
@@ -811,9 +826,9 @@ export function createCanvas(model, container, callbacks) {
             } else {
               m.copy(zeroMatrix);
             }
-            obj.setMatrixAt(i, m);
+            (obj as THREE_NS.InstancedMesh).setMatrixAt(i, m);
           }
-          obj.instanceMatrix.needsUpdate = true;
+          (obj as THREE_NS.InstancedMesh).instanceMatrix.needsUpdate = true;
         } else {
           obj.visible = matchSet.has(obj.userData.pointIndex);
         }
@@ -823,7 +838,7 @@ export function createCanvas(model, container, callbacks) {
       pointsGroup.children.forEach(obj => {
         if (obj.userData.isInstanced) {
           const indices = obj.userData.pointIndices;
-          const attr = obj.geometry.getAttribute("color");
+          const attr = mesh(obj).geometry.getAttribute("color");
           if (!obj.userData._originalColors) {
             obj.userData._originalColors = new Float32Array(attr.array);
           }
@@ -834,11 +849,12 @@ export function createCanvas(model, container, callbacks) {
             attr.array[i * 3 + 2] = obj.userData._originalColors[i * 3 + 2] * dim;
           }
           attr.needsUpdate = true;
-        } else if (obj.material) {
+        } else if (mat(obj)) {
           const matches = matchSet.has(obj.userData.pointIndex);
-          obj.material.transparent = !matches;
-          obj.material.opacity = matches ? 1.0 : 0.08;
-          obj.material.needsUpdate = true;
+          const m = mat(obj) as THREE_NS.Material;
+          m.transparent = !matches;
+          m.opacity = matches ? 1.0 : 0.08;
+          m.needsUpdate = true;
         }
       });
     }
@@ -893,8 +909,8 @@ export function createCanvas(model, container, callbacks) {
       lassoCoords.push(lassoCoords[0]);
 
       const rect = container.getBoundingClientRect();
-      const selectedIds = [];
-      const points = model.get("points") || [];
+      const selectedIds: string[] = [];
+      const points = (model.get("points") ?? []) as PointData[];
       points.forEach((p, idx) => {
         const pos = new THREE.Vector3(p.x ?? 0, p.y ?? 0, p.z ?? 0).project(camera);
         const sx = (pos.x * 0.5 + 0.5) * rect.width;
@@ -909,7 +925,7 @@ export function createCanvas(model, container, callbacks) {
     });
   }
 
-  function pointInPolygon(x, y, polygon) {
+  function pointInPolygon(x: number, y: number, polygon: [number, number][]): boolean {
     let inside = false;
     for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
       const [xi, yi] = polygon[i];
@@ -925,13 +941,13 @@ export function createCanvas(model, container, callbacks) {
     // Clear previous highlight rings
     while (selectionGroup.children.length > 0) {
       const obj = selectionGroup.children[0];
-      if (obj.geometry) obj.geometry.dispose();
-      if (obj.material) obj.material.dispose();
+      if (mesh(obj).geometry) mesh(obj).geometry.dispose();
+      mat(obj)?.dispose();
       selectionGroup.remove(obj);
     }
 
     const selectedIds = model.get("selected_points") || [];
-    const points = model.get("points") || [];
+    const points = (model.get("points") ?? []) as PointData[];
 
     if (selectedIds.length === 0) {
       // Restore all points: show everything
@@ -942,9 +958,9 @@ export function createCanvas(model, container, callbacks) {
             const m = new THREE.Matrix4();
             for (let i = 0; i < obj.userData.pointIds.length; i++) {
               m.fromArray(obj.userData._selOrigMatrices, i * 16);
-              obj.setMatrixAt(i, m);
+              (obj as THREE_NS.InstancedMesh).setMatrixAt(i, m);
             }
-            obj.instanceMatrix.needsUpdate = true;
+            (obj as THREE_NS.InstancedMesh).instanceMatrix.needsUpdate = true;
             obj.userData._selOrigMatrices = null;
           }
         } else {
@@ -966,7 +982,7 @@ export function createCanvas(model, container, callbacks) {
           const buf = new Float32Array(pointIds.length * 16);
           const m = new THREE.Matrix4();
           for (let i = 0; i < pointIds.length; i++) {
-            obj.getMatrixAt(i, m);
+            (obj as THREE_NS.InstancedMesh).getMatrixAt(i, m);
             m.toArray(buf, i * 16);
           }
           obj.userData._selOrigMatrices = buf;
@@ -979,9 +995,9 @@ export function createCanvas(model, container, callbacks) {
           } else {
             m.copy(zeroMatrix);
           }
-          obj.setMatrixAt(i, m);
+          (obj as THREE_NS.InstancedMesh).setMatrixAt(i, m);
         }
-        obj.instanceMatrix.needsUpdate = true;
+        (obj as THREE_NS.InstancedMesh).instanceMatrix.needsUpdate = true;
       } else {
         obj.visible = selectedSet.has(obj.userData.pointId);
       }
@@ -1007,7 +1023,7 @@ export function createCanvas(model, container, callbacks) {
   return { cleanup, applyFilter };
 }
 
-function pointMatchesFilter(point, filter) {
+function pointMatchesFilter(point: PointData, filter: string): boolean {
   for (const [key, val] of Object.entries(point)) {
     if (key === "x" || key === "y" || key === "z" || key === "vector") continue;
     if (val != null && String(val).toLowerCase().includes(filter)) return true;
@@ -1015,11 +1031,35 @@ function pointMatchesFilter(point, filter) {
   return false;
 }
 
-// Helper functions
-function getColorFromScale(value, scaleName, domain) {
+// Helper functions (shared with the standalone export page, ui/export.ts)
+export function getPointColor(point: PointData, opts: PointStyleOpts): THREE_NS.Color {
+  if (point.color) return new THREE.Color(point.color);
+  if (opts.colorField && point[opts.colorField] !== undefined) {
+    const value = point[opts.colorField];
+    if (typeof value === "number") {
+      return getColorFromScale(value, opts.colorScale, opts.colorDomain);
+    }
+    return getCategoricalColor(value);
+  }
+  return new THREE.Color(0x6366f1);
+}
+
+export function getPointSize(point: PointData, opts: PointStyleOpts): number {
+  if (point.size !== undefined) return point.size;
+  if (opts.sizeField && point[opts.sizeField] !== undefined && opts.sizeDomain) {
+    const [min, max] = opts.sizeDomain;
+    const t = max > min ? ((point[opts.sizeField] as number) - min) / (max - min) : 0.5;
+    return opts.sizeRange[0] + t * (opts.sizeRange[1] - opts.sizeRange[0]);
+  }
+  return (opts.sizeRange[0] + opts.sizeRange[1]) * 0.5;
+}
+
+function getColorFromScale(value: number, scaleName: string, domain: [number, number] | null): THREE_NS.Color {
   const scale = COLOR_SCALES[scaleName] || COLOR_SCALES.viridis;
   const [min, max] = domain || [0, 1];
-  const t = Math.max(0, Math.min(1, (value - min) / (max - min)));
+  const range = max - min;
+  // A domain whose ends are equal (all values the same) maps to the middle of the scale, not NaN
+  const t = range > 0 ? Math.max(0, Math.min(1, (value - min) / range)) : 0.5;
   const idx = t * (scale.length - 1);
   const i = Math.floor(idx);
   const f = idx - i;
@@ -1035,7 +1075,7 @@ function getColorFromScale(value, scaleName, domain) {
   );
 }
 
-function hashString(str) {
+function hashString(str: string): number {
   let hash = 0;
   for (let i = 0; i < str.length; i++) {
     hash = ((hash << 5) - hash) + str.charCodeAt(i);
@@ -1044,7 +1084,7 @@ function hashString(str) {
   return Math.abs(hash);
 }
 
-function getCategoricalColor(value) {
+function getCategoricalColor(value: unknown): THREE_NS.Color {
   const idx = hashString(String(value)) % CATEGORICAL_COLORS.length;
   return new THREE.Color(CATEGORICAL_COLORS[idx]);
 }

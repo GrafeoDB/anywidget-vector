@@ -1,8 +1,8 @@
-// Smoke test of the browser-side Grafeo backend (backends/grafeo/embed.js)
+// Smoke test of the browser-side Grafeo backend (backends/grafeo/embed.ts)
 // against a real, unpacked @grafeo-db/wasm package.
 //
 //   npm pack @grafeo-db/wasm@0.6.0 && tar -xzf grafeo-db-wasm-0.6.0.tgz
-//   node tests/js/wasm_smoke.mjs package
+//   node tests/js/wasm_smoke.ts package
 //
 // It runs the same loader the widget uses in the browser (glue import plus
 // manual instantiation of the bundler-target binary), then the vector search
@@ -24,11 +24,11 @@ globalThis.fetch = async (url, init) => {
   return new Response(await readFile(new URL(href)), { headers: { "content-type": "application/wasm" } });
 };
 
-const embed = await import(new URL("../../src/anywidget_vector/backends/grafeo/embed.js", import.meta.url));
+const embed = await import(new URL("../../src/anywidget_vector/backends/grafeo/embed.ts", import.meta.url).href);
 console.log(`@grafeo-db/wasm ${pkg.version} (widget pins ${embed.GRAFEO_WASM_VERSION})`);
 
 let failures = 0;
-function check(condition, message) {
+function check(condition: unknown, message: string): void {
   console.log(`${condition ? "ok  " : "FAIL"} ${message}`);
   if (!condition) failures += 1;
 }
@@ -38,15 +38,15 @@ await embed.loadWasmBindings(pathToFileURL(pkgDir).href);
 await embed.connect();
 check(embed.isConnected(), "connect() creates a database");
 
-const run = (query, config = {}) => embed.executeQuery(query, config);
+const run = (query: string, config: Record<string, unknown> = {}) => embed.executeQuery(query, config);
 const docs = [
   ["alpha", [1.0, 0.0, 0.0]],
   ["beta", [0.9, 0.2, 0.1]],
   ["gamma", [0.1, 1.0, 0.2]],
   ["delta", [0.0, 0.8, 0.9]],
 ];
-for (const [name, vec] of docs) {
-  await run(`INSERT (:Doc {name: '${name}', embedding: vector([${vec.map((v) => v.toFixed(1)).join(", ")}])})`);
+for (const [name, vec] of docs as [string, number[]][]) {
+  await run(`INSERT (:Doc {name: '${name}', embedding: vector([${vec.map((v: number) => v.toFixed(1)).join(", ")}])})`);
 }
 await run("CREATE VECTOR INDEX doc_embedding ON :Doc(embedding) DIMENSION 3 METRIC 'cosine'");
 
@@ -57,11 +57,11 @@ const points = embed.toPoints(await run(search));
 check(points.length === 3, `vector search returns k=3 points (got ${points.length})`);
 check(points[0]?.name === "alpha" && points[1]?.name === "beta", "nearest neighbors come first");
 check(
-  points.every((p, i) => i === 0 || p.distance >= points[i - 1].distance),
+  points.every((p: any, i: number) => i === 0 || p.distance >= points[i - 1].distance),
   "points are ordered by distance",
 );
 check(
-  points.every((p) => Array.isArray(p.vector) && p.vector.length === 3),
+  points.every((p: any) => Array.isArray(p.vector) && (p.vector as number[]).length === 3),
   "vectors arrive as plain arrays",
 );
 check(points[0]?.x === 1 && points[0]?.y === 0 && points[0]?.z === 0, "coordinates come from the embedding");
@@ -96,7 +96,7 @@ let sizeError = "";
 try {
   await run(search.replace("[1.0, 0.1, 0.0]", "[1.0, 0.1]"));
 } catch (err) {
-  sizeError = String(err?.message ?? err);
+  sizeError = String((err as Error | undefined)?.message ?? err);
 }
 check(/expects 3/.test(sizeError), `a query vector of the wrong size is an error (${sizeError})`);
 check(embed.toPoints(await run(search)).length === 3, "the database keeps answering after that error");

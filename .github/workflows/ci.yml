@@ -51,6 +51,19 @@ jobs:
       - name: Install dependencies
         run: uv sync --locked --extra dev
 
+      # TypeScript and the type packages, so tsc can check every module in src/ and tests/js/
+      - name: Install the front-end dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Install the JavaScript test dependencies
+        run: npm ci --ignore-scripts --prefix tests/js
+
+      - name: Type-check the front end
+        run: npm run typecheck
+
+      - name: Run the JavaScript tests
+        run: npm test
+
       - name: Run tests
         run: uv run --locked --extra dev pytest
 

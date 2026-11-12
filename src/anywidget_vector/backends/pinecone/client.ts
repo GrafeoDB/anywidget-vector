@@ -1,14 +1,15 @@
 // Pinecone browser-side client
+import type { BackendConfig, PointData } from "../../ui/types.ts";
 
-export async function executeQuery(query, config) {
+export async function executeQuery(query: string, config: BackendConfig): Promise<any> {
   const { url, apiKey, namespace } = config;
-  const headers = { "Content-Type": "application/json", "Api-Key": apiKey };
+  const headers: Record<string, string> = { "Content-Type": "application/json", "Api-Key": apiKey };
 
   const parsed = typeof query === "string" ? JSON.parse(query) : query;
 
   if (parsed.ids) {
     // Fetch by IDs
-    const resp = await fetch(`${url}/vectors/fetch?${parsed.ids.map(id => `ids=${id}`).join("&")}`, {
+    const resp = await fetch(`${url}/vectors/fetch?${parsed.ids.map((id: string) => `ids=${id}`).join("&")}`, {
       method: "GET",
       headers,
     });
@@ -31,9 +32,9 @@ export async function executeQuery(query, config) {
   return await resp.json();
 }
 
-export function toPoints(response) {
+export function toPoints(response: any): PointData[] {
   const matches = response.matches || [];
-  return matches.map(m => ({
+  return matches.map((m: any) => ({
     id: m.id,
     score: m.score,
     x: m.values?.[0] ?? m.metadata?.x ?? 0,

@@ -1,12 +1,13 @@
 // Qdrant browser-side client
+import type { BackendConfig, PointData } from "../../ui/types.ts";
 
-export async function executeQuery(query, config) {
+export async function executeQuery(query: string, config: BackendConfig): Promise<any> {
   const { url, apiKey, collection } = config;
-  const headers = { "Content-Type": "application/json" };
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (apiKey) headers["api-key"] = apiKey;
 
   const parsed = typeof query === "string" ? JSON.parse(query) : query;
-  let endpoint, body;
+  let endpoint: string, body: Record<string, unknown>;
 
   if (parsed.ids) {
     endpoint = `${url}/collections/${collection}/points`;
@@ -47,9 +48,9 @@ export async function executeQuery(query, config) {
   return await resp.json();
 }
 
-export function toPoints(response) {
+export function toPoints(response: any): PointData[] {
   const results = response.result || response.points || [];
-  return results.map(r => ({
+  return results.map((r: any) => ({
     id: String(r.id),
     score: r.score,
     x: r.vector?.[0] ?? r.payload?.x ?? 0,

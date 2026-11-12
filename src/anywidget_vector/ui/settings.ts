@@ -1,8 +1,9 @@
 // Settings panel component for VectorSpace widget
-import { ICONS } from "../static/icons.js";
-import { BACKENDS } from "./constants.js";
+import { ICONS } from "../static/icons.ts";
+import { BACKENDS } from "./constants.ts";
+import type { BackendConfig, Panel, PanelCallbacks, WidgetModel } from "./types.ts";
 
-export function createSettingsPanel(model, callbacks) {
+export function createSettingsPanel(model: WidgetModel, callbacks: PanelCallbacks): Panel {
   const panel = document.createElement("div");
   panel.className = "avs-panel avs-panel-right";
 
@@ -29,8 +30,8 @@ export function createSettingsPanel(model, callbacks) {
   const checkbox = document.createElement("input");
   checkbox.type = "checkbox";
   checkbox.checked = model.get("dark_mode");
-  checkbox.addEventListener("change", (e) => {
-    model.set("dark_mode", e.target.checked);
+  checkbox.addEventListener("change", (e: Event) => {
+    model.set("dark_mode", (e.target as HTMLInputElement).checked);
     model.save_changes();
   });
   model.on("change:dark_mode", () => {
@@ -261,7 +262,7 @@ export function createSettingsPanel(model, callbacks) {
   };
 }
 
-function createFormGroup(label) {
+function createFormGroup(label: string): HTMLDivElement {
   const group = document.createElement("div");
   group.className = "avs-form-group";
   const lbl = document.createElement("label");
@@ -271,11 +272,11 @@ function createFormGroup(label) {
   return group;
 }
 
-function updateConnectionFields(container, model) {
+function updateConnectionFields(container: HTMLElement, model: WidgetModel): void {
   container.innerHTML = "";
 
   const backend = model.get("backend") || "grafeo";
-  const config = model.get("backend_config") || {};
+  const config = (model.get("backend_config") ?? {}) as BackendConfig;
   const backendInfo = BACKENDS[backend];
 
   if (!backendInfo || backend === "grafeo") return;
@@ -309,7 +310,7 @@ function updateConnectionFields(container, model) {
   }
 
   // Collection/Index/Class/Table name
-  let nameLabel, namePlaceholder;
+  let nameLabel: string | undefined, namePlaceholder: string | undefined;
   if (backendInfo.hasCollection) {
     nameLabel = "Collection";
     namePlaceholder = "my_collection";
@@ -329,7 +330,7 @@ function updateConnectionFields(container, model) {
     const nameInput = document.createElement("input");
     nameInput.type = "text";
     nameInput.className = "avs-input";
-    nameInput.placeholder = namePlaceholder;
+    nameInput.placeholder = namePlaceholder ?? "";
     nameInput.value = config.collection || config.index || config.className || config.table || "";
     nameInput.dataset.field = nameLabel.toLowerCase();
     nameInput.addEventListener("input", () => updateBackendConfig(model, container));
@@ -359,9 +360,9 @@ function updateConnectionFields(container, model) {
   }
 }
 
-function updateBackendConfig(model, container) {
-  const inputs = container.querySelectorAll(".avs-input");
-  const config = {};
+function updateBackendConfig(model: WidgetModel, container: HTMLElement): void {
+  const inputs = container.querySelectorAll<HTMLInputElement>(".avs-input");
+  const config: BackendConfig = {};
 
   inputs.forEach((input) => {
     if (!input.value) return;

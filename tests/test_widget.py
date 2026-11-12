@@ -453,7 +453,7 @@ class TestEventDecorators:
             hovers.append(point_id)
 
         widget.hovered_point = {"id": "x"}
-        widget.hovered_point = None
+        widget.hovered_point = None  # ty: ignore[invalid-assignment]  # allow_none=True
         assert hovers[-1] is None
 
     def test_on_selection_fires(self):

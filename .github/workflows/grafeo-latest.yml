@@ -55,7 +55,7 @@ jobs:
         id: version
         run: |
           if [ "${{ matrix.release }}" = "pinned" ]; then
-            version=$(sed -n 's/^export const GRAFEO_WASM_VERSION = "\(.*\)";$/\1/p' src/anywidget_vector/backends/grafeo/embed.js)
+            version=$(sed -n 's/^export const GRAFEO_WASM_VERSION = "\(.*\)";$/\1/p' src/anywidget_vector/backends/grafeo/embed.ts)
           else
             version=$(npm view @grafeo-db/wasm versions --json | node -e 'const v = JSON.parse(require("fs").readFileSync(0, "utf8")); console.log([].concat(v).pop())')
           fi
@@ -69,4 +69,4 @@ jobs:
           tar -xzf grafeo-db-wasm-*.tgz
 
       - name: Run smoke test
-        run: node tests/js/wasm_smoke.mjs "$RUNNER_TEMP/wasm/package"
+        run: node tests/js/wasm_smoke.ts "$RUNNER_TEMP/wasm/package"

@@ -16,26 +16,28 @@
  * one bad value cannot break camera framing for the whole scene.
  */
 
+import type { PointData } from "../../ui/types.ts";
+
 const GRAFEO_VECTOR_KEYS = new Set(["vector", "embedding", "embeddings"]);
 const GRAFEO_AXES = ["x", "y", "z"];
 
-export function isGrafeoNode(val) {
-  return val !== null && typeof val === "object" && "_id" in val && Array.isArray(val._labels);
+export function isGrafeoNode(val: unknown): val is { _id: unknown; _labels: unknown[] } & Record<string, unknown> {
+  return val !== null && typeof val === "object" && "_id" in val && Array.isArray((val as Record<string, unknown>)._labels);
 }
 
 /** Map a result column to a point key: `n.embedding` -> `embedding`, `id(n)` -> `id`. */
-export function grafeoColumnKey(column) {
+export function grafeoColumnKey(column: string): string {
   const property = /^[A-Za-z_]\w*\.([A-Za-z_]\w*)$/.exec(column);
   if (property) return property[1];
   if (/^id\(\s*[A-Za-z_]\w*\s*\)$/i.test(column)) return "id";
   return column;
 }
 
-function isGrafeoDecimal(val) {
+function isGrafeoDecimal(val: unknown): val is { $decimal: string } {
   return isGrafeoPlainObject(val) && typeof val.$decimal === "string" && Object.keys(val).length === 1;
 }
 
-function isGrafeoPlainObject(val) {
+function isGrafeoPlainObject(val: unknown): val is Record<string, unknown> {
   if (val === null || typeof val !== "object") return false;
   const proto = Object.getPrototypeOf(val);
   return proto === Object.prototype || proto === null;
@@ -45,8 +47,8 @@ function isGrafeoPlainObject(val) {
  * Make a value safe to sync to Python as JSON (typed arrays and BigInt are not),
  * and turn engine decimals into numbers, also inside lists and maps.
  */
-function grafeoPlainValue(val) {
-  if (ArrayBuffer.isView(val) && !(val instanceof DataView)) return Array.from(val);
+function grafeoPlainValue(val: unknown): unknown {
+  if (ArrayBuffer.isView(val) && !(val instanceof DataView)) return Array.from(val as unknown as Iterable<number>);
   if (typeof val === "bigint") {
     const num = Number(val);
     return Number.isSafeInteger(num) ? num : String(val);
@@ -62,14 +64,14 @@ function grafeoPlainValue(val) {
   return val;
 }
 
-function grafeoFiniteNumber(val) {
-  const num = typeof val === "number" ? val : parseFloat(val);
+function grafeoFiniteNumber(val: unknown): number {
+  const num = typeof val === "number" ? val : parseFloat(val as string);
   return Number.isFinite(num) ? num : 0;
 }
 
 /** Flatten a row into [key, value] fields, expanding node values into their properties. */
-function grafeoRowFields(entries) {
-  const fields = [];
+function grafeoRowFields(entries: [string, unknown][]): [string, unknown][] {
+  const fields: [string, unknown][] = [];
   const columnKeys = new Set();
   for (const [column, raw] of entries) {
     const val = grafeoPlainValue(raw);
@@ -92,16 +94,16 @@ function grafeoRowFields(entries) {
 /**
  * Convert one result row, given as [column, value] pairs, into a point.
  */
-export function grafeoRowToPoint(entries, index) {
-  const point = { id: `point_${index}` };
-  let vector = null;
+export function grafeoRowToPoint(entries: [string, unknown][], index: number): PointData {
+  const point: Record<string, unknown> & { id: string } = { id: `point_${index}` };
+  let vector: number[] | null = null;
 
   for (const [key, val] of grafeoRowFields(entries)) {
     if (val === null || val === undefined) continue;
     if (key === "id" || key === "ID") {
       point.id = String(val);
     } else if (GRAFEO_VECTOR_KEYS.has(key) && Array.isArray(val)) {
-      if (vector === null) vector = val;
+      if (vector === null) vector = val as number[];
     } else if (GRAFEO_AXES.includes(key)) {
       point[key] = grafeoFiniteNumber(val);
     } else {
@@ -113,5 +115,5 @@ export function grafeoRowToPoint(entries, index) {
   GRAFEO_AXES.forEach((axis, i) => {
     if (point[axis] === undefined) point[axis] = vector ? grafeoFiniteNumber(vector[i] ?? 0) : 0;
   });
-  return point;
+  return point as PointData;
 }

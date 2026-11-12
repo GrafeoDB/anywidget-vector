@@ -6,14 +6,15 @@
  * {columns: string[], rows: any[][]}; errors return {error, detail}.
  * The server sends no CORS headers unless started with --cors-origins.
  */
-import { grafeoRowToPoint } from "./points.js";
+import { grafeoRowToPoint } from "./points.ts";
+import type { BackendConfig, PointData } from "../../ui/types.ts";
 
 /**
  * Execute a query against Grafeo server.
  */
-export async function executeQuery(query, config) {
+export async function executeQuery(query: string, config: BackendConfig): Promise<any> {
   const url = config.url || "http://localhost:7474";
-  const headers = { "Content-Type": "application/json" };
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
 
   if (config.authToken) {
     headers["Authorization"] = "Bearer " + config.authToken;
@@ -21,7 +22,7 @@ export async function executeQuery(query, config) {
     headers["Authorization"] = "Basic " + btoa(config.username + ":" + config.password);
   }
 
-  const body = { query, language: config.language || "gql" };
+  const body: Record<string, unknown> = { query, language: config.language || "gql" };
   if (config.database && config.database !== "default") {
     body.database = config.database;
   }
@@ -50,14 +51,14 @@ export async function executeQuery(query, config) {
 /**
  * Convert Grafeo server result to points array.
  */
-export function toPoints(response) {
+export function toPoints(response: any): PointData[] {
   const columns = response?.columns || [];
   const rows = response?.rows || response?.data || [];
 
-  return rows.map((row, i) => {
-    const values = Array.isArray(row) ? row : columns.map((c) => row?.[c]);
+  return rows.map((row: any, i: number) => {
+    const values = Array.isArray(row) ? row : columns.map((c: string) => row?.[c]);
     return grafeoRowToPoint(
-      columns.map((col, c) => [col, values[c]]),
+      columns.map((col: string, c: number) => [col, values[c]] as [string, unknown]),
       i,
     );
   });

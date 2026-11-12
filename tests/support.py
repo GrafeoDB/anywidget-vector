@@ -29,3 +29,13 @@ def run_node_module(source: str, tmp_path: Path) -> str:
     proc = subprocess.run([NODE, str(script)], capture_output=True, text=True, timeout=60, check=False)
     assert proc.returncode == 0, f"node failed:\n{proc.stderr}\n{proc.stdout}"
     return proc.stdout
+
+
+def run_node_ts_module(source: str, tmp_path: Path) -> str:
+    """Run TypeScript as an ES module with Node (type stripping) and return stdout (fails the test on error)."""
+    assert NODE is not None
+    script = tmp_path / "check.ts"
+    script.write_text(source, encoding="utf-8")
+    proc = subprocess.run([NODE, str(script)], capture_output=True, text=True, timeout=60, check=False)
+    assert proc.returncode == 0, f"node failed:\n{proc.stderr}\n{proc.stdout}"
+    return proc.stdout
