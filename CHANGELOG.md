@@ -2,7 +2,7 @@
 
 ## [0.4.1] - 2026-11-12
 
-Grafeo 0.6.2 release: the Grafeo backend moves to grafeo 0.6.2 in Python and in the browser, and the front end is TypeScript, bundled by esbuild. An environment with the `grafeo` extra upgrades grafeo to 0.6.2 or later; stay on 0.4.0 to keep an older 0.6.x.
+Grafeo 0.6.2 release: the Grafeo backend moves to grafeo 0.6.2 in Python and in the browser, and the front end is TypeScript, bundled by esbuild. An environment with the `grafeo` extra upgrades grafeo to 0.6.2 or later; to keep grafeo 0.6.0 or 0.6.1, stay on anywidget-vector 0.4.0 and pin grafeo.
 
 ### Changed
 
@@ -15,7 +15,7 @@ Grafeo 0.6.2 release: the Grafeo backend moves to grafeo 0.6.2 in Python and in 
 - **grafeo 0.6.2** (requires `>=0.6.2,<0.7`): The `grafeo` and `dev` extras need grafeo 0.6.2, and the `wasm` mode loads `@grafeo-db/wasm` 0.6.2 (`GRAFEO_WASM_VERSION` in `backends/grafeo/embed.ts`).
 - **Locked versions refreshed**: 35 packages, among them ty 0.0.100, typer 0.29.0, pandas 3.1.1, lancedb 0.41.0, ruff 0.17.4 and python-dateutil 4.0.0. Front-end build tools: esbuild 0.28.2, TypeScript 7.0.2 and `@types/three` 0.186.0.
 
-## 0.4.0 (2026-10-28)
+## [0.4.0] - 2026-10-28
 
 Requires Python 3.12 or later; the Grafeo backend requires grafeo 0.6. See "Upgrading to 0.4" in the README.
 
@@ -61,7 +61,7 @@ Requires Python 3.12 or later; the Grafeo backend requires grafeo 0.6. See "Upgr
 - **HTML export sizes**: `to_html(width=..., height=...)` placed the values in the page's `<style>` unchecked; a value that is not a plain CSS size now raises `ValueError`
 - **Source distribution**: A local `uv build` packed the `.claude/` folder (agent notes and local settings) into the sdist; it is now excluded
 
-## 0.3.2 (2026-03-16)
+## [0.3.2] - 2026-03-16
 
 ### Improvements
 
@@ -77,7 +77,7 @@ Requires Python 3.12 or later; the Grafeo backend requires grafeo 0.6. See "Upgr
 - **setSelection scoping**: Moved `setSelection` helper to `createCanvas` scope so lasso/box/click handlers can access it
 - **Camera debounce variable**: Fixed `_cameraDebounce` lexical declaration error by moving it to the correct scope
 
-## 0.3.1 (2026-03-16)
+## [0.3.1] - 2026-03-16
 
 ### New Features
 
@@ -97,7 +97,7 @@ Requires Python 3.12 or later; the Grafeo backend requires grafeo 0.6. See "Upgr
 - Camera no longer resets on every point update (only on initial load)
 - Cross-widget filtering: example updated so VectorSpace lasso selection feeds back into ParallelCoordinates dimming via marimo reactivity
 
-## 0.3.0 (2026-03-16)
+## [0.3.0] - 2026-03-16
 
 ### New Features
 
@@ -108,19 +108,19 @@ Requires Python 3.12 or later; the Grafeo backend requires grafeo 0.6. See "Upgr
 
 - Improved sidebar styling and layout
 
-## 0.2.8 (2026-03-15)
+## [0.2.8] - 2026-03-15
 
 ### New Features
 
 - **6D parallel coordinates example**: Fashion-MNIST demo with PCA across 6+ dimensions, interactive axis mapping and shape mapping to categorical labels
 
-## 0.2.7 (2026-03-15)
+## [0.2.7] - 2026-03-15
 
 ### New Features
 
 - **Dark/light mode toggle**: `dark_mode` trait with real-time CSS color scheme switching and theme-aware styling across all panels
 
-## 0.2.6 (2026-03-15)
+## [0.2.6] - 2026-03-15
 
 ### New Features
 
@@ -134,7 +134,7 @@ Requires Python 3.12 or later; the Grafeo backend requires grafeo 0.6. See "Upgr
 - Coordinate normalization after projection
 - Added demo screenshot to README
 
-## 0.2.5 (2026-03-04)
+## [0.2.5] - 2026-03-04
 
 ### Bug Fixes
 
@@ -147,7 +147,7 @@ Requires Python 3.12 or later; the Grafeo backend requires grafeo 0.6. See "Upgr
 - Better visual feedback for selection modes
 - Cleaner toolbar layout with integrated mode controls
 
-## 0.2.4 (2026-03-02)
+## [0.2.4] - 2026-03-02
 
 ### New Features
 
@@ -161,7 +161,7 @@ Requires Python 3.12 or later; the Grafeo backend requires grafeo 0.6. See "Upgr
 - Updated README with comprehensive usage examples
 - Updated dependencies
 
-## 0.2.3 (2026-02-12)
+## [0.2.3] - 2026-02-12
 
 ### New Features
 
@@ -174,7 +174,7 @@ Requires Python 3.12 or later; the Grafeo backend requires grafeo 0.6. See "Upgr
 - Consistency pass across all backend modules
 - Ruff configuration tuned for marimo compatibility
 
-## 0.2.2 (2026-02-07)
+## [0.2.2] - 2026-02-07
 
 ### New Features
 
@@ -186,7 +186,7 @@ Requires Python 3.12 or later; the Grafeo backend requires grafeo 0.6. See "Upgr
 - Expanded test suite with 194 additional test cases
 - ESM bundle aggregation for widget JavaScript
 
-## 0.2.1 (2026-02-03)
+## [0.2.1] - 2026-02-03
 
 ### New Features
 
@@ -201,6 +201,6 @@ Requires Python 3.12 or later; the Grafeo backend requires grafeo 0.6. See "Upgr
 - Refactored monolithic widget into modular component architecture
 - Added README with usage examples
 
-## 0.1.0 (2026-02-03)
+## [0.1.0] - 2026-02-03
 
 - Initial release: Three.js-based interactive 3D vector visualization with instanced rendering, six shape types, continuous and categorical color mapping, orbit controls, hover tooltips, axes/grid display and raycast-based selection
