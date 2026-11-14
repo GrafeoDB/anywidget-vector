@@ -527,6 +527,8 @@ export function createCanvas(model: WidgetModel, container: HTMLElement, callbac
     camera.far = Math.max(1000, distance * 10);
     camera.updateProjectionMatrix();
     controls.update();
+    // The view moved under the pointer: a tooltip would point at nothing until the next mouse move
+    hideTooltip();
   }
 
   function setupZoomControls() {
@@ -1072,6 +1074,7 @@ export function createCanvas(model: WidgetModel, container: HTMLElement, callbac
       camera.far = Math.max(1000, distance * 10);
       camera.updateProjectionMatrix();
       controls.update();
+      hideTooltip();
     }
   }
 

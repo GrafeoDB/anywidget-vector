@@ -1,6 +1,7 @@
 // Properties panel component for VectorSpace widget
 import { ICONS } from "../static/icons.ts";
 import type { PanelCallbacks, PointData, PropertiesPanel, WidgetModel } from "./types.ts";
+import { closeButton, panelControls } from "./panel.ts";
 
 export function createPropertiesPanel(model: WidgetModel, callbacks: PanelCallbacks): PropertiesPanel {
   const panel = document.createElement("div");
@@ -14,11 +15,7 @@ export function createPropertiesPanel(model: WidgetModel, callbacks: PanelCallba
   const header = document.createElement("div");
   header.className = "avs-panel-header";
   header.innerHTML = `<span>Properties</span>`;
-  const closeBtn = document.createElement("button");
-  closeBtn.className = "avs-btn avs-btn-icon";
-  closeBtn.innerHTML = ICONS.close;
-  closeBtn.addEventListener("click", () => callbacks.onClose?.());
-  header.appendChild(closeBtn);
+  header.appendChild(closeButton(ICONS.close, "Close properties", () => callbacks.onClose?.()));
   inner.appendChild(header);
 
   // Content container
@@ -49,11 +46,7 @@ export function createPropertiesPanel(model: WidgetModel, callbacks: PanelCallba
   model.on("change:points", showSelection);
 
   return {
-    element: panel,
-    open: () => panel.classList.add("avs-open"),
-    close: () => panel.classList.remove("avs-open"),
-    toggle: () => panel.classList.toggle("avs-open"),
-    isOpen: () => panel.classList.contains("avs-open"),
+    ...panelControls(panel),
     setHoveredPoint: (point: PointData | null) => {
       const selectedIds = (model.get("selected_points") ?? []) as string[];
       if (point && selectedIds.length === 0) {

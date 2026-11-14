@@ -2,6 +2,7 @@
 import { ICONS } from "../static/icons.ts";
 import { BACKENDS, backendInfo as lookupBackend } from "./constants.ts";
 import type { BackendConfig, Panel, PanelCallbacks, WidgetModel } from "./types.ts";
+import { closeButton, nameFields, panelControls } from "./panel.ts";
 
 export function createSettingsPanel(model: WidgetModel, callbacks: PanelCallbacks): Panel {
   const panel = document.createElement("div");
@@ -15,11 +16,7 @@ export function createSettingsPanel(model: WidgetModel, callbacks: PanelCallback
   const header = document.createElement("div");
   header.className = "avs-panel-header";
   header.innerHTML = `<span>Settings</span>`;
-  const closeBtn = document.createElement("button");
-  closeBtn.className = "avs-btn avs-btn-icon";
-  closeBtn.innerHTML = ICONS.close;
-  closeBtn.addEventListener("click", () => callbacks.onClose?.());
-  header.appendChild(closeBtn);
+  header.appendChild(closeButton(ICONS.close, "Close settings", () => callbacks.onClose?.()));
   inner.appendChild(header);
 
   // Dark mode toggle (hidden when host provides theme)
@@ -252,14 +249,9 @@ export function createSettingsPanel(model: WidgetModel, callbacks: PanelCallback
   // Initialize
   updateVisibility();
   updateConnectionFields(connFields, model);
+  nameFields(panel);
 
-  return {
-    element: panel,
-    open: () => panel.classList.add("avs-open"),
-    close: () => panel.classList.remove("avs-open"),
-    toggle: () => panel.classList.toggle("avs-open"),
-    isOpen: () => panel.classList.contains("avs-open"),
-  };
+  return panelControls(panel);
 }
 
 function createFormGroup(label: string): HTMLDivElement {
@@ -273,6 +265,11 @@ function createFormGroup(label: string): HTMLDivElement {
 }
 
 function updateConnectionFields(container: HTMLElement, model: WidgetModel): void {
+  buildConnectionFields(container, model);
+  nameFields(container);
+}
+
+function buildConnectionFields(container: HTMLElement, model: WidgetModel): void {
   container.innerHTML = "";
 
   const backend = model.get("backend") || "grafeo";

@@ -297,6 +297,42 @@ function categoryColor(value, registry, palette) {
   return slot === null ? otherInk(palette) : palette.data[slot];
 }
 
+// panel.ts
+function setPanelOpen(panel, open) {
+  panel.classList.toggle("avs-open", open);
+  panel.inert = !open;
+}
+function panelControls(panel) {
+  setPanelOpen(panel, false);
+  const isOpen = () => panel.classList.contains("avs-open");
+  return {
+    element: panel,
+    open: () => setPanelOpen(panel, true),
+    close: () => setPanelOpen(panel, false),
+    toggle: () => setPanelOpen(panel, !isOpen()),
+    isOpen
+  };
+}
+var fieldIds = 0;
+function nameFields(root) {
+  for (const group of root.querySelectorAll(".avs-form-group")) {
+    const label = group.querySelector(":scope > .avs-label");
+    const field = group.querySelector("input, select, textarea");
+    if (!label || !field || label.htmlFor || field.closest("label")) continue;
+    if (!field.id) field.id = `avs-field-${++fieldIds}`;
+    label.htmlFor = field.id;
+  }
+}
+function closeButton(icon, name, onClose) {
+  const button = document.createElement("button");
+  button.className = "avs-btn avs-btn-icon";
+  button.innerHTML = icon;
+  button.title = name;
+  button.setAttribute("aria-label", name);
+  button.addEventListener("click", onClose);
+  return button;
+}
+
 // sidebar.ts
 function createSidebar(model, callbacks) {
   const panel = document.createElement("div");
@@ -307,11 +343,7 @@ function createSidebar(model, callbacks) {
   const header = document.createElement("div");
   header.className = "avs-panel-header";
   header.innerHTML = "<span>Explorer</span>";
-  const closeBtn = document.createElement("button");
-  closeBtn.className = "avs-btn avs-btn-icon";
-  closeBtn.innerHTML = ICONS.close;
-  closeBtn.addEventListener("click", () => callbacks.onClose?.());
-  header.appendChild(closeBtn);
+  header.appendChild(closeButton(ICONS.close, "Close explorer", () => callbacks.onClose?.()));
   inner.appendChild(header);
   const collectionsSection = document.createElement("div");
   collectionsSection.className = "avs-sidebar-section";
@@ -556,13 +588,8 @@ function createSidebar(model, callbacks) {
   updateCollections();
   updateDimensions();
   updateClusters();
-  return {
-    element: panel,
-    open: () => panel.classList.add("avs-open"),
-    close: () => panel.classList.remove("avs-open"),
-    toggle: () => panel.classList.toggle("avs-open"),
-    isOpen: () => panel.classList.contains("avs-open")
-  };
+  nameFields(panel);
+  return panelControls(panel);
 }
 function addStatRow(container, key, value) {
   const row = document.createElement("div");
@@ -712,11 +739,7 @@ function createSettingsPanel(model, callbacks) {
   const header = document.createElement("div");
   header.className = "avs-panel-header";
   header.innerHTML = `<span>Settings</span>`;
-  const closeBtn = document.createElement("button");
-  closeBtn.className = "avs-btn avs-btn-icon";
-  closeBtn.innerHTML = ICONS.close;
-  closeBtn.addEventListener("click", () => callbacks.onClose?.());
-  header.appendChild(closeBtn);
+  header.appendChild(closeButton(ICONS.close, "Close settings", () => callbacks.onClose?.()));
   inner.appendChild(header);
   const themeGroup = createFormGroup("Theme");
   themeGroup.classList.add("avs-theme-toggle");
@@ -912,13 +935,8 @@ function createSettingsPanel(model, callbacks) {
   }
   updateVisibility();
   updateConnectionFields(connFields, model);
-  return {
-    element: panel,
-    open: () => panel.classList.add("avs-open"),
-    close: () => panel.classList.remove("avs-open"),
-    toggle: () => panel.classList.toggle("avs-open"),
-    isOpen: () => panel.classList.contains("avs-open")
-  };
+  nameFields(panel);
+  return panelControls(panel);
 }
 function createFormGroup(label) {
   const group = document.createElement("div");
@@ -930,6 +948,10 @@ function createFormGroup(label) {
   return group;
 }
 function updateConnectionFields(container, model) {
+  buildConnectionFields(container, model);
+  nameFields(container);
+}
+function buildConnectionFields(container, model) {
   container.innerHTML = "";
   const backend = model.get("backend") || "grafeo";
   const config = model.get("backend_config") ?? {};
@@ -1037,11 +1059,7 @@ function createPropertiesPanel(model, callbacks) {
   const header = document.createElement("div");
   header.className = "avs-panel-header";
   header.innerHTML = `<span>Properties</span>`;
-  const closeBtn = document.createElement("button");
-  closeBtn.className = "avs-btn avs-btn-icon";
-  closeBtn.innerHTML = ICONS.close;
-  closeBtn.addEventListener("click", () => callbacks.onClose?.());
-  header.appendChild(closeBtn);
+  header.appendChild(closeButton(ICONS.close, "Close properties", () => callbacks.onClose?.()));
   inner.appendChild(header);
   const content = document.createElement("div");
   content.className = "avs-properties-content";
@@ -1066,11 +1084,7 @@ function createPropertiesPanel(model, callbacks) {
   model.on("change:selected_points", showSelection);
   model.on("change:points", showSelection);
   return {
-    element: panel,
-    open: () => panel.classList.add("avs-open"),
-    close: () => panel.classList.remove("avs-open"),
-    toggle: () => panel.classList.toggle("avs-open"),
-    isOpen: () => panel.classList.contains("avs-open"),
+    ...panelControls(panel),
     setHoveredPoint: (point) => {
       const selectedIds = model.get("selected_points") ?? [];
       if (point && selectedIds.length === 0) {
@@ -1170,6 +1184,11 @@ function wrapperSize(width, height) {
 
 // states.ts
 var EMPTY_NOTE = "Nothing to show yet. Pass points from Python, or run a query.";
+var NO_BACKEND = "No database connected: pass points from Python or call set_backend().";
+var NARROW_WIDGET = 800;
+function isNarrowWidget(width) {
+  return width < NARROW_WIDGET;
+}
 function canvasNote(model) {
   if (model.get("query_error")) return "";
   return (model.get("points") ?? []).length > 0 ? "" : EMPTY_NOTE;
@@ -1734,6 +1753,7 @@ function createCanvas(model, container, callbacks) {
     camera.far = Math.max(1e3, distance * 10);
     camera.updateProjectionMatrix();
     controls.update();
+    hideTooltip();
   }
   function setupZoomControls() {
     const zoomControls = document.createElement("div");
@@ -2199,6 +2219,7 @@ function createCanvas(model, container, callbacks) {
       camera.far = Math.max(1e3, distance * 10);
       camera.updateProjectionMatrix();
       controls.update();
+      hideTooltip();
     }
   }
   return { cleanup, applyFilter };
@@ -2633,6 +2654,12 @@ function render({ model: widgetModel, el }) {
   let settingsPanel = null;
   let propertiesPanel;
   let toolbarUI = null;
+  const roomFor = (panel) => {
+    if (!isNarrowWidget(wrapper.clientWidth)) return;
+    for (const other of [sidebar, settingsPanel, propertiesPanel]) {
+      if (other && other !== panel && other.isOpen()) other.close();
+    }
+  };
   if (model.get("show_toolbar")) {
     toolbarUI = createToolbar(model, {
       onRunQuery: () => runQuery(),
@@ -2642,13 +2669,18 @@ function render({ model: widgetModel, el }) {
           if (toolbarUI) toolbarUI.setFilterCount(result.matched, result.total);
         }
       },
-      onToggleSidebar: () => sidebar?.toggle(),
+      onToggleSidebar: () => {
+        if (sidebar && !sidebar.isOpen()) roomFor(sidebar);
+        sidebar?.toggle();
+      },
       onToggleSettings: () => {
         if (propertiesPanel?.isOpen()) propertiesPanel.close();
+        if (settingsPanel && !settingsPanel.isOpen()) roomFor(settingsPanel);
         settingsPanel?.toggle();
       },
       onToggleProperties: () => {
         if (settingsPanel?.isOpen()) settingsPanel.close();
+        if (propertiesPanel && !propertiesPanel.isOpen()) roomFor(propertiesPanel);
         propertiesPanel?.toggle();
       }
     });
@@ -2681,6 +2713,7 @@ function render({ model: widgetModel, el }) {
     const action = propertiesForSelection(model.get("selected_points") || [], Boolean(model.get("show_properties")));
     if (action === "open" && !propertiesPanel.isOpen()) {
       settingsPanel?.close();
+      roomFor(propertiesPanel);
       propertiesPanel.open();
     } else if (action === "close") {
       propertiesPanel.close();
@@ -2710,7 +2743,14 @@ function render({ model: widgetModel, el }) {
     const status = model.get("connection_status");
     const isBrowserSide = backendInfo2 && backendInfo2.side === "browser" || backend === "grafeo" && (mode === "server" || mode === "wasm");
     const hasBackend = isBrowserSide || status === "connected";
-    if (!hasBackend) return;
+    if (!hasBackend) {
+      if ((model.get("points") ?? []).length === 0) {
+        model.set("query_error", null);
+        model.set("query_error", NO_BACKEND);
+        model.save_changes();
+      }
+      return;
+    }
     const ticket = startQuery(widgetModel);
     if (toolbarUI) toolbarUI.setLoading(true);
     let pythonPending = false;

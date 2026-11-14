@@ -8,7 +8,7 @@ import { createToolbar } from "./toolbar.ts";
 import { createSettingsPanel } from "./settings.ts";
 import { createPropertiesPanel, propertiesForSelection } from "./properties.ts";
 import { wrapperSize } from "./size.ts";
-import { mountCanvasNote } from "./states.ts";
+import { isNarrowWidget, mountCanvasNote, NO_BACKEND } from "./states.ts";
 import { createCanvas } from "./canvas.ts";
 import { executeBackendQuery, isLatestQuery, startQuery } from "./query.ts";
 import type { Panel, PropertiesPanel, WidgetModel } from "./types.ts";
@@ -34,6 +34,15 @@ function render({ model: widgetModel, el }: { model: WidgetModel; el: HTMLElemen
   let propertiesPanel: PropertiesPanel;
   let toolbarUI: ReturnType<typeof createToolbar> | null = null;
 
+  // A widget narrower than two panels and a canvas has room for one side panel: opening one closes the open panel
+  // on the other side, so the canvas stays in view
+  const roomFor = (panel: Panel) => {
+    if (!isNarrowWidget(wrapper.clientWidth)) return;
+    for (const other of [sidebar, settingsPanel, propertiesPanel]) {
+      if (other && other !== panel && other.isOpen()) other.close();
+    }
+  };
+
   if (model.get("show_toolbar")) {
     toolbarUI = createToolbar(model, {
       onRunQuery: () => runQuery(),
@@ -43,13 +52,18 @@ function render({ model: widgetModel, el }: { model: WidgetModel; el: HTMLElemen
           if (toolbarUI) toolbarUI.setFilterCount(result.matched, result.total);
         }
       },
-      onToggleSidebar: () => sidebar?.toggle(),
+      onToggleSidebar: () => {
+        if (sidebar && !sidebar.isOpen()) roomFor(sidebar);
+        sidebar?.toggle();
+      },
       onToggleSettings: () => {
         if (propertiesPanel?.isOpen()) propertiesPanel.close();
+        if (settingsPanel && !settingsPanel.isOpen()) roomFor(settingsPanel);
         settingsPanel?.toggle();
       },
       onToggleProperties: () => {
         if (settingsPanel?.isOpen()) settingsPanel.close();
+        if (propertiesPanel && !propertiesPanel.isOpen()) roomFor(propertiesPanel);
         propertiesPanel?.toggle();
       },
     });
@@ -90,6 +104,7 @@ function render({ model: widgetModel, el }: { model: WidgetModel; el: HTMLElemen
     const action = propertiesForSelection(model.get("selected_points") || [], Boolean(model.get("show_properties")));
     if (action === "open" && !propertiesPanel.isOpen()) {
       settingsPanel?.close();
+      roomFor(propertiesPanel);
       propertiesPanel.open();
     } else if (action === "close") {
       propertiesPanel.close();
@@ -129,7 +144,16 @@ function render({ model: widgetModel, el }: { model: WidgetModel; el: HTMLElemen
       (backend === "grafeo" && (mode === "server" || mode === "wasm"));
     const hasBackend = isBrowserSide || status === "connected";
 
-    if (!hasBackend) return;
+    if (!hasBackend) {
+      // With points, Run filtered them above; with none, say why nothing happens (the empty note suggests a query)
+      if ((model.get("points") ?? []).length === 0) {
+        // Through null first, so the banner shows again after it was closed
+        model.set("query_error", null);
+        model.set("query_error", NO_BACKEND);
+        model.save_changes();
+      }
+      return;
+    }
 
     // A slower, older query must not overwrite the result of a newer one
     const ticket = startQuery(widgetModel);

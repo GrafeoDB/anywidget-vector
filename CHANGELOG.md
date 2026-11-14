@@ -9,7 +9,7 @@ Shared look release: the widget takes the look of the anywidgets family (graphit
 - **Cluster swatches**: the explorer's cluster list shows each cluster's colour; clusters beyond the eight largest are marked "Other".
 - **Query errors in view**: a failed query shows its message in a banner under the toolbar (before, only inside Settings).
 - **Empty state**: an empty widget shows "Nothing to show yet. Pass points from Python, or run a query."
-- **Keyboard focus**: buttons, menus, checkboxes and the explorer's cluster rows show a focus ring, and the dark mode switch can be reached with the keyboard. A cluster row selects its points with Enter or Space.
+- **Keyboard focus**: buttons, menus, checkboxes and the explorer's cluster rows show a focus ring, and the dark mode switch can be reached with the keyboard. A cluster row selects its points with Enter or Space, and Tab skips the controls of a closed side panel.
 
 ### Changed
 
@@ -22,6 +22,7 @@ Shared look release: the widget takes the look of the anywidgets family (graphit
 - **Axes and grid**: grey axes with mono letters and a faint hairline grid replace the red, green and blue axes, also in `to_html()` pages, whose tooltip follows the theme too. Switching the theme recolours the points, axes and grid and keeps the camera, the selection and the toolbar filter.
 - **Canvas controls**: the selection modes and zoom buttons are one floating card at the bottom right, as in anywidget-graph. Under 480px wide the card leaves out zoom in and out (pinch or the mouse wheel still zooms).
 - **Properties panel**: opens when points are selected and closes when the selection clears, instead of opening empty on load; a selection set before the widget is shown opens it on that point's details. `show_properties=False` still keeps it out.
+- **One side panel in a narrow widget**: under 800px wide, opening a panel closes the open one on the other side, so the canvas stays in view (picking a cluster in the explorer opens Properties and closes the explorer).
 - **Toggles look pressed**: the active selection mode and the chosen collection look pressed instead of filled, so only Run is a filled button.
 - **Settings**: each field sits under its label at full width.
 
@@ -32,6 +33,9 @@ Shared look release: the widget takes the look of the anywidgets family (graphit
 - **Pinch zooms on touch screens**: a two-finger pinch on the canvas did nothing; it now zooms, as the mouse wheel does.
 - **A selection mode given in Python shows**: `selection_mode="box"` or `"lasso"` in the constructor now presses its button and turns on its overlay; before, Click looked active and box or lasso selection did nothing until a mode button was clicked. `"multi"` keeps the camera controls.
 - **Background colours in any CSS form**: a `background` such as `#fff`, `rgb(...)` or `white` now tints the grid (before, only six-digit hex did). A colour the browser cannot read stays a solid fill instead of being mixed as black, and a malformed `rgb()` is no longer read as a colour.
+- **Run with nothing to query says so**: with no database connected and no points, Run shows "No database connected: pass points from Python or call set_backend()." in the query banner; before, it did nothing.
+- **Fields and close buttons are named**: every Settings field and the explorer's metric and K fields are named by their labels, and each panel's close button by its panel, for screen readers.
+- **Tooltip after a selection**: the hover tooltip hides when the camera frames a selection or the cloud, instead of pointing at empty canvas.
 
 ## [0.4.1] - 2026-11-12
 
