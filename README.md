@@ -8,8 +8,8 @@
 Works with Marimo, Jupyter, VS Code, Colab, anywhere [anywidget](https://anywidget.dev/) runs.
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="assets/demo-dark.png">
-  <img src="assets/demo-light.png" alt="anywidget-vector showing six clusters of embeddings in 3D, coloured by topic, with the explorer open">
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/GrafeoDB/anywidget-vector/main/assets/demo-dark.png">
+  <img src="https://raw.githubusercontent.com/GrafeoDB/anywidget-vector/main/assets/demo-light.png" alt="anywidget-vector showing six clusters of embeddings in 3D, coloured by topic, with the explorer open">
 </picture>
 
 ## Features
