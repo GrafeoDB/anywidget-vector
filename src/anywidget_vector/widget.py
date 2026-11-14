@@ -17,7 +17,7 @@ from anywidget_vector.backends import is_python_backend
 from anywidget_vector.backends.chroma.client import execute_query as chroma_query
 from anywidget_vector.backends.grafeo.client import execute_query as grafeo_query
 from anywidget_vector.backends.lancedb.client import execute_query as lancedb_query
-from anywidget_vector.ui import get_css, get_esm, get_export_js, get_vendor_js
+from anywidget_vector.ui import get_css, get_esm, get_export_js, get_theme_css, get_vendor_js
 
 if TYPE_CHECKING:
     pass
@@ -826,7 +826,13 @@ class VectorSpace(anywidget.AnyWidget):
             ValueError: If width or height is not a plain CSS value (such as ``600px``, ``100%`` or ``calc(...)``).
         """
         options = {
-            "background": self.background,
+            # A background chosen in Python or set by the page's theme; None lets the page use the theme's canvas
+            # colour (a widget never shown still has the trait's default)
+            "background": self.background
+            if self._background_explicit or self.background != type(self).background.default_value
+            else None,
+            # The page draws in this theme's data colours (ui/palette.ts)
+            "dark_mode": self.dark_mode,
             "color_field": self.color_field,
             "color_scale": self.color_scale,
             "color_domain": self.color_domain,
@@ -834,10 +840,13 @@ class VectorSpace(anywidget.AnyWidget):
             "size_range": list(self.size_range),
             "show_axes": self.show_axes,
             "show_grid": self.show_grid,
+            "grid_divisions": self.grid_divisions,
             "axis_labels": dict(self.axis_labels),
         }
         return _HTML_TEMPLATE.format(
             title=html.escape(title),
+            theme_css=get_theme_css(),
+            theme_class="avs-wrapper avs-dark" if self.dark_mode else "avs-wrapper",
             width=_css_value("width", width),
             height=_css_value("height", height),
             vendor_js=get_vendor_js(),

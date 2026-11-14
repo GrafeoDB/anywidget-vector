@@ -6,7 +6,12 @@ import type { OrbitControls as OrbitControlsType } from "three/addons/controls/O
 const mesh = (o: THREE_NS.Object3D): THREE_NS.Mesh => o as THREE_NS.Mesh;
 const mat = (o: THREE_NS.Object3D) => (o as THREE_NS.Mesh).material as THREE_NS.Material | undefined;
 
-import { CATEGORICAL_COLORS, colorScale } from "./constants.ts";
+import { colorScale } from "./constants.ts";
+import { assignedRegistry, categoryColor, paletteFor } from "./colors.ts";
+import { fitDistance, selectionDistance } from "./frame.ts";
+import { applyInk } from "./ink.ts";
+import { disposeTree, labChrome } from "./lab.ts";
+import type { CategoryRegistry, Palette } from "./registry.ts";
 import { ICONS } from "../static/icons.ts";
 import type { CanvasCallbacks, PointData, WidgetModel } from "./types.ts";
 
@@ -28,6 +33,10 @@ export interface PointStyleOpts {
   sizeField: string | null;
   sizeDomain?: [number, number];
   sizeRange: number[];
+  /** The theme's data colours and Other (palette.ts) */
+  palette: Palette;
+  /** The colour field's category assignments (registry.ts); null without a colour field */
+  registry: CategoryRegistry | null;
 }
 
 // The resolved per-point render options
@@ -64,6 +73,8 @@ const DISTANCE_METRICS: Record<string, (a: PointData, b: PointData) => number> =
 
 export function createCanvas(model: WidgetModel, container: HTMLElement, callbacks: CanvasCallbacks): { cleanup: () => void; applyFilter: (filterText: string, hard: boolean) => { matched: number; total: number } } {
   let scene: THREE_NS.Scene;
+  // The background the ink points fill towards: one uniform for every point material, updated with the theme
+  const inkBackground = { value: new THREE.Color(model.get("background")) };
   let camera: THREE_NS.PerspectiveCamera;
   let renderer: THREE_NS.WebGLRenderer;
   let controls: OrbitControlsType;
@@ -73,8 +84,13 @@ export function createCanvas(model: WidgetModel, container: HTMLElement, callbac
   let mouse: THREE_NS.Vector2;
   let hoveredObject: { pointIndex: number; pointId: string } | null = null;
   let tooltip: HTMLDivElement;
-  let axesGroup: THREE_NS.Group;
-  let gridHelper: THREE_NS.GridHelper | null;
+  let chrome: THREE_NS.Group | null = null;
+  // Whether the last drawn points were any: points arriving in an empty view are framed
+  let hasPoints = false;
+  // The last filter the toolbar applied, so a redraw of the points (a theme switch) keeps it
+  let lastFilter = { text: "", hard: false };
+  // The selection mode buttons, set up with the canvas controls card
+  let modeButtons: [HTMLButtonElement, string][] = [];
   let animationId: number;
   let resizeObserver: ResizeObserver;
   let selectionRect: HTMLDivElement;
@@ -133,19 +149,23 @@ export function createCanvas(model: WidgetModel, container: HTMLElement, callbac
     controls.enableDamping = true;
     controls.dampingFactor = 0.08;
     controls.zoomSpeed = 0.3;
-    controls.enableZoom = false; // disable built-in scroll zoom
+    // On for pinch: OrbitControls zooms on touch only with enableZoom (the controls card has no zoom buttons under
+    // 480px). The wheel keeps the gentler zoom below, which stops the event before it reaches OrbitControls
+    controls.enableZoom = true;
     const target = model.get("camera_target") || [0, 0, 0];
     controls.target.set(target[0], target[1], target[2]);
 
-    // Custom smooth scroll zoom with reduced sensitivity
-    renderer.domElement.addEventListener("wheel", (e: WheelEvent) => {
+    // Custom smooth scroll zoom with reduced sensitivity, in the capture phase on the container so it runs first
+    container.addEventListener("wheel", (e: WheelEvent) => {
+      if (e.target !== renderer.domElement) return;
       e.preventDefault();
+      e.stopPropagation();
       const factor = 1 + e.deltaY * 0.0003;
       const offset = camera.position.clone().sub(controls.target);
       offset.multiplyScalar(factor);
       camera.position.copy(controls.target).add(offset);
       controls.update();
-    }, { passive: false });
+    }, { passive: false, capture: true });
 
     // Lighting
     scene.add(new THREE.AmbientLight(0xffffff, 0.6));
@@ -160,8 +180,6 @@ export function createCanvas(model: WidgetModel, container: HTMLElement, callbac
     scene.add(connectionsGroup);
     selectionGroup = new THREE.Group();
     scene.add(selectionGroup);
-    axesGroup = new THREE.Group();
-    scene.add(axesGroup);
 
     // Setup
     setupAxesAndGrid();
@@ -170,6 +188,8 @@ export function createCanvas(model: WidgetModel, container: HTMLElement, callbac
     setupZoomControls();
     setupBoxSelection();
     setupLassoSelection();
+    // The mode the host set (selection_mode="box" in the constructor), not always Click
+    showMode(currentMode);
     setupKeyboardShortcuts();
     createPoints();
     createConnections();
@@ -196,38 +216,21 @@ export function createCanvas(model: WidgetModel, container: HTMLElement, callbac
   }
 
   function setupAxesAndGrid() {
-    while (axesGroup.children.length > 0) axesGroup.remove(axesGroup.children[0]);
-    if (gridHelper) { scene.remove(gridHelper); gridHelper = null; }
-
-    if (model.get("show_axes")) {
-      const axes = new THREE.AxesHelper(1.2);
-      axesGroup.add(axes);
-      const labels = model.get("axis_labels") || { x: "X", y: "Y", z: "Z" };
-      addAxisLabel(labels.x, [1.3, 0, 0], 0xff4444);
-      addAxisLabel(labels.y, [0, 1.3, 0], 0x44ff44);
-      addAxisLabel(labels.z, [0, 0, 1.3], 0x4444ff);
+    // The old axes, letters and grid go with their GPU resources: this runs on every theme switch
+    if (chrome) {
+      scene.remove(chrome);
+      disposeTree(chrome);
     }
-
-    if (model.get("show_grid")) {
-      gridHelper = new THREE.GridHelper(2, model.get("grid_divisions") || 10, 0x444444, 0x333333);
-      scene.add(gridHelper);
-    }
-  }
-
-  function addAxisLabel(text: string, position: number[], color: number): void {
-    const canvas = document.createElement("canvas");
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    canvas.width = 64; canvas.height = 32;
-    ctx.font = "bold 24px Arial";
-    ctx.fillStyle = "#" + color.toString(16).padStart(6, "0");
-    ctx.textAlign = "center";
-    ctx.fillText(text, 32, 24);
-    const texture = new THREE.CanvasTexture(canvas);
-    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture }));
-    sprite.position.set(position[0], position[1], position[2]);
-    sprite.scale.set(0.25, 0.125, 1);
-    axesGroup.add(sprite);
+    chrome = labChrome({
+      showAxes: Boolean(model.get("show_axes")),
+      showGrid: Boolean(model.get("show_grid")),
+      labels: model.get("axis_labels") || {},
+      divisions: model.get("grid_divisions") || 10,
+      palette: paletteFor(model),
+      // Any CSS colour the host passes (#rgb, rgb(), a name): mixOver reads it
+      background: String(model.get("background") || ""),
+    });
+    scene.add(chrome);
   }
 
   function createPoints() {
@@ -239,13 +242,15 @@ export function createCanvas(model: WidgetModel, container: HTMLElement, callbac
     }
 
     const points = (model.get("points") ?? []) as PointData[];
+    hasPoints = points.length > 0;
     if (points.length === 0) return;
 
     // Auto-scale point sizes relative to data extent
     const box = new THREE.Box3();
     points.forEach(p => box.expandByPoint(new THREE.Vector3(p.x ?? 0, p.y ?? 0, p.z ?? 0)));
     const dataSize = box.getSize(new THREE.Vector3()).length() || 1;
-    const scaleFactor = dataSize / 10;
+    // Points sized for the framed view (the whole cloud in sight, frame.ts)
+    const scaleFactor = dataSize / 6;
     const rawRange = model.get("size_range") || [0.02, 0.06];
     const sizeRange = [rawRange[0] * scaleFactor, rawRange[1] * scaleFactor];
 
@@ -257,7 +262,13 @@ export function createCanvas(model: WidgetModel, container: HTMLElement, callbac
       sizeRange: sizeRange,
       shapeField: model.get("shape_field"),
       shapeMap: model.get("shape_map") || {},
+      palette: paletteFor(model),
+      registry: null,
     };
+    // The 8 data colours go to the largest categories of the colour field; earlier assignments stay (registry.ts)
+    if (opts.colorField) {
+      opts.registry = assignedRegistry(model, opts.colorField, points);
+    }
 
     // Compute domains
     if (opts.colorField && !opts.colorDomain) {
@@ -295,6 +306,7 @@ export function createCanvas(model: WidgetModel, container: HTMLElement, callbac
       const geometry = SHAPE_GEOMETRIES[shape]();
       const color = getPointColor(point, opts);
       const material = new THREE.MeshPhongMaterial({ color });
+      applyInk(material, inkBackground);
       const mesh = new THREE.Mesh(geometry, material);
       const size = getPointSize(point, opts);
       mesh.scale.set(size, size, size);
@@ -315,6 +327,7 @@ export function createCanvas(model: WidgetModel, container: HTMLElement, callbac
     for (const [shape, items] of Object.entries(groups)) {
       const geometry = SHAPE_GEOMETRIES[shape]();
       const material = new THREE.MeshPhongMaterial({ vertexColors: false });
+      applyInk(material, inkBackground);
       const instancedMesh = new THREE.InstancedMesh(geometry, material, items.length);
       const matrix = new THREE.Matrix4();
       const colors = new Float32Array(items.length * 3);
@@ -506,14 +519,16 @@ export function createCanvas(model: WidgetModel, container: HTMLElement, callbac
     const box = new THREE.Box3();
     points.forEach(p => box.expandByPoint(new THREE.Vector3(p.x ?? 0, p.y ?? 0, p.z ?? 0)));
     const center = box.getCenter(new THREE.Vector3());
-    const size = box.getSize(new THREE.Vector3()).length();
-    const distance = size / (2 * Math.tan(Math.PI * camera.fov / 360));
+    // The cloud's real radius (frame.ts), seen from above and to the side so the grid reads as a floor
+    const distance = fitDistance(points.map((p) => ({ x: p.x ?? 0, y: p.y ?? 0, z: p.z ?? 0 })), center, camera.fov, camera.aspect) || 2;
     controls.target.copy(center);
-    camera.position.copy(center.clone().add(new THREE.Vector3(0, 0, distance * 0.55)));
+    camera.position.copy(center.clone().add(new THREE.Vector3(0.6, 0.5, 0.8).normalize().multiplyScalar(distance)));
     camera.near = Math.max(0.01, distance * 0.001);
     camera.far = Math.max(1000, distance * 10);
     camera.updateProjectionMatrix();
     controls.update();
+    // The view moved under the pointer: a tooltip would point at nothing until the next mouse move
+    hideTooltip();
   }
 
   function setupZoomControls() {
@@ -545,12 +560,12 @@ export function createCanvas(model: WidgetModel, container: HTMLElement, callbac
     zoomFitBtn.title = "Fit to view";
     zoomFitBtn.addEventListener("click", fitToView);
 
-    // Mode switcher (above zoom buttons, inside same column)
+    // Mode switcher: the first group of the card
     const modeGroup = document.createElement("div");
     modeGroup.className = "avs-mode-group";
 
     const clickBtn = document.createElement("button");
-    clickBtn.className = "avs-zoom-btn avs-mode-btn avs-mode-active";
+    clickBtn.className = "avs-zoom-btn avs-mode-btn";
     clickBtn.innerHTML = ICONS.cursor;
     clickBtn.title = "Click / multi-select mode";
 
@@ -564,18 +579,12 @@ export function createCanvas(model: WidgetModel, container: HTMLElement, callbac
     lassoBtn.innerHTML = ICONS.lasso;
     lassoBtn.title = "Lasso select mode";
 
+    modeButtons = [[clickBtn, "click"], [boxBtn, "box"], [lassoBtn, "lasso"]];
+
     function setActiveMode(mode: string): void {
-      currentMode = mode;
       model.set("selection_mode", mode);
       model.save_changes();
-
-      clickBtn.classList.toggle("avs-mode-active", mode === "click");
-      boxBtn.classList.toggle("avs-mode-active", mode === "box");
-      lassoBtn.classList.toggle("avs-mode-active", mode === "lasso");
-
-      controls.enabled = (mode === "click");
-      if (boxOverlay) boxOverlay.style.display = (mode === "box") ? "block" : "none";
-      if (lassoOverlayEl) lassoOverlayEl.style.display = (mode === "lasso") ? "block" : "none";
+      showMode(mode);
     }
 
     clickBtn.addEventListener("click", () => setActiveMode("click"));
@@ -585,18 +594,33 @@ export function createCanvas(model: WidgetModel, container: HTMLElement, callbac
     // Sync with model changes from Python side
     model.on("change:selection_mode", () => {
       const mode = model.get("selection_mode") || "click";
-      if (mode !== currentMode) setActiveMode(mode);
+      if (mode !== currentMode) showMode(mode);
     });
 
     modeGroup.appendChild(clickBtn);
     modeGroup.appendChild(boxBtn);
     modeGroup.appendChild(lassoBtn);
 
-    zoomControls.appendChild(modeGroup);
-    zoomControls.appendChild(zoomInBtn);
-    zoomControls.appendChild(zoomOutBtn);
-    zoomControls.appendChild(zoomFitBtn);
+    // One floating card, the same order as the graph widget: select modes | zoom in, zoom out, fit
+    const zoomGroup = document.createElement("div");
+    zoomGroup.className = "avs-zoom-group";
+    zoomGroup.append(zoomInBtn, zoomOutBtn, zoomFitBtn);
+    zoomControls.append(modeGroup, zoomGroup);
     container.appendChild(zoomControls);
+  }
+
+  /** Show a selection mode: its button pressed, the orbit controls and the box or lasso overlay to match. */
+  function showMode(mode: string): void {
+    currentMode = mode;
+    // Multi-select is the click button's mode too (shift-click adds to the selection)
+    const shown = mode === "multi" ? "click" : mode;
+    for (const [btn, name] of modeButtons) {
+      btn.classList.toggle("avs-mode-active", name === shown);
+      btn.setAttribute("aria-pressed", String(name === shown));
+    }
+    controls.enabled = shown === "click";
+    if (boxOverlay) boxOverlay.style.display = mode === "box" ? "block" : "none";
+    if (lassoOverlayEl) lassoOverlayEl.style.display = mode === "lasso" ? "block" : "none";
   }
 
   function setupBoxSelection() {
@@ -717,8 +741,28 @@ export function createCanvas(model: WidgetModel, container: HTMLElement, callbac
   }
 
   function bindModelEvents() {
-    model.on("change:points", () => { createPoints(); createConnections(); updateSelectionHighlight(); });
-    model.on("change:background", () => { scene.background = new THREE.Color(model.get("background")); });
+    model.on("change:points", () => {
+      // Points arriving in an empty view (a query's first results) are framed as at open; a view that already had
+      // points keeps the user's camera
+      const wasEmpty = !hasPoints;
+      createPoints();
+      createConnections();
+      if (wasEmpty && hasPoints) fitToView();
+      updateSelectionHighlight();
+    });
+    model.on("change:background", () => {
+      scene.background = new THREE.Color(model.get("background"));
+      inkBackground.value.set(model.get("background"));
+      setupAxesAndGrid();
+    });
+    // A theme switch redraws the points (each theme has its own data colours) and the grid and axes; the toolbar
+    // filter and the selection stay, and the camera stays where the user left it
+    model.on("change:dark_mode", () => {
+      createPoints();
+      if (lastFilter.text) applyFilter(lastFilter.text, lastFilter.hard);
+      setupAxesAndGrid();
+      updateSelectionHighlight(false);
+    });
     model.on("change:show_axes", setupAxesAndGrid);
     model.on("change:show_grid", setupAxesAndGrid);
     model.on("change:color_field", createPoints);
@@ -735,7 +779,7 @@ export function createCanvas(model: WidgetModel, container: HTMLElement, callbac
     model.on("change:distance_metric", createConnections);
     model.on("change:connection_color", createConnections);
     model.on("change:connection_opacity", createConnections);
-    model.on("change:selected_points", updateSelectionHighlight);
+    model.on("change:selected_points", () => updateSelectionHighlight());
     model.on("change:camera_position", () => {
       const pos = model.get("camera_position");
       if (pos) camera.position.set(pos[0], pos[1], pos[2]);
@@ -768,6 +812,7 @@ export function createCanvas(model: WidgetModel, container: HTMLElement, callbac
   }
 
   function applyFilter(filterText: string, hard: boolean): { matched: number; total: number } {
+    lastFilter = { text: filterText, hard };
     const points = (model.get("points") ?? []) as PointData[];
     const filter = (filterText || "").toLowerCase().trim();
     const total = points.length;
@@ -878,8 +923,9 @@ export function createCanvas(model: WidgetModel, container: HTMLElement, callbac
     container.appendChild(lassoSvg);
 
     lassoPathEl = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
-    lassoPathEl.setAttribute("fill", "rgba(99, 102, 241, 0.1)");
-    lassoPathEl.setAttribute("stroke", "#6366f1");
+    // The selection outline in the theme's ring colour (a CSS variable, so it follows a theme switch)
+    lassoPathEl.style.fill = "color-mix(in srgb, var(--avs-ring) 10%, transparent)";
+    lassoPathEl.style.stroke = "var(--avs-ring)";
     lassoPathEl.setAttribute("stroke-width", "2");
     lassoPathEl.setAttribute("stroke-dasharray", "4 2");
     lassoSvg.appendChild(lassoPathEl);
@@ -946,7 +992,8 @@ export function createCanvas(model: WidgetModel, container: HTMLElement, callbac
     return inside;
   }
 
-  function updateSelectionHighlight() {
+  /** Show only the selected points; `frame` also moves the camera to them (a new selection, not a redraw). */
+  function updateSelectionHighlight(frame = true) {
     // Clear previous highlight rings
     while (selectionGroup.children.length > 0) {
       const obj = selectionGroup.children[0];
@@ -1014,18 +1061,20 @@ export function createCanvas(model: WidgetModel, container: HTMLElement, callbac
 
     // Zoom to fit selected points
     const selectedPoints = points.filter(p => selectedSet.has(p.id));
-    if (selectedPoints.length > 0) {
+    if (frame && selectedPoints.length > 0) {
       const box = new THREE.Box3();
       selectedPoints.forEach(p => box.expandByPoint(new THREE.Vector3(p.x ?? 0, p.y ?? 0, p.z ?? 0)));
       const center = box.getCenter(new THREE.Vector3());
-      const size = box.getSize(new THREE.Vector3()).length() || 0.1;
-      const distance = size / (2 * Math.tan(Math.PI * camera.fov / 360));
+      // Framed like the whole cloud, from the same angle, never closer than a quarter of it (frame.ts)
+      const at = (p: PointData) => ({ x: p.x ?? 0, y: p.y ?? 0, z: p.z ?? 0 });
+      const distance = selectionDistance(selectedPoints.map(at), points.map(at), camera.fov, camera.aspect) || 1;
       controls.target.copy(center);
-      camera.position.copy(center.clone().add(new THREE.Vector3(0, 0, distance * 0.55)));
+      camera.position.copy(center.clone().add(new THREE.Vector3(0.6, 0.5, 0.8).normalize().multiplyScalar(distance)));
       camera.near = Math.max(0.01, distance * 0.001);
       camera.far = Math.max(1000, distance * 10);
       camera.updateProjectionMatrix();
       controls.update();
+      hideTooltip();
     }
   }
 
@@ -1043,14 +1092,24 @@ function pointMatchesFilter(point: PointData, filter: string): boolean {
 // Helper functions (shared with the standalone export page, ui/export.ts)
 export function getPointColor(point: PointData, opts: PointStyleOpts): THREE_NS.Color {
   if (point.color) return new THREE.Color(point.color);
-  if (opts.colorField && point[opts.colorField] !== undefined) {
+  if (opts.colorField) {
     const value = point[opts.colorField];
     if (typeof value === "number") {
       return getColorFromScale(value, opts.colorScale, opts.colorDomain);
     }
-    return getCategoricalColor(value);
+    // The eight largest categories in the data colours; the rest, and points without a value, are Other (receding)
+    return new THREE.Color(categoryColor(value, opts.registry, opts.palette));
   }
-  return new THREE.Color(0x6366f1);
+  return new THREE.Color(opts.palette.data[0]);
+}
+
+function hashString(str: string): number {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = ((hash << 5) - hash) + str.charCodeAt(i);
+    hash |= 0;
+  }
+  return Math.abs(hash);
 }
 
 export function getPointSize(point: PointData, opts: PointStyleOpts): number {
@@ -1084,16 +1143,4 @@ function getColorFromScale(value: number, scaleName: string, domain: [number, nu
   );
 }
 
-function hashString(str: string): number {
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    hash = ((hash << 5) - hash) + str.charCodeAt(i);
-    hash |= 0;
-  }
-  return Math.abs(hash);
-}
 
-function getCategoricalColor(value: unknown): THREE_NS.Color {
-  const idx = hashString(String(value)) % CATEGORICAL_COLORS.length;
-  return new THREE.Color(CATEGORICAL_COLORS[idx]);
-}

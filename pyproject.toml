@@ -1,6 +1,6 @@
 [project]
 name = "anywidget-vector"
-version = "0.4.1"
+version = "1.0.0"
 description = "Interactive 3D vector visualization with query UI for vector databases"
 readme = "README.md"
 license = "Apache-2.0"
@@ -72,8 +72,23 @@ build-backend = "hatchling.build"
 packages = ["src/anywidget_vector"]
 
 [tool.hatch.build.targets.sdist]
-# Local agent notes and settings; .gitignore files outside the repo are not the only guard
-exclude = [".claude"]
+only-include = [
+    "src",
+    "tests",
+    "examples",
+    "scripts",
+    "assets",
+    ".github",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE",
+    "package.json",
+    "package-lock.json",
+    "tsconfig.json",
+    "uv.lock",
+    ".python-version",
+    ".gitignore",
+]
 
 [tool.ruff]
 line-length = 120

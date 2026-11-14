@@ -548,6 +548,23 @@ class TestToHtml:
         assert '"color_field": "cluster"' in html or '"color_field":"cluster"' in html
         assert '"show_axes": false' in html or '"show_axes":false' in html
 
+    def test_to_html_tells_the_page_its_theme(self):
+        """The page picks the data colours of the widget's theme (light or dark palette)."""
+        assert '"dark_mode": true' in VectorSpace(points=[], dark_mode=True).to_html()
+        assert '"dark_mode": false' in VectorSpace(points=[], dark_mode=False).to_html()
+
+    def test_to_html_page_uses_the_widget_tokens(self):
+        """The page carries the widget's colour variables and its theme class, so the tooltip and background match."""
+        page = VectorSpace(points=[], dark_mode=True).to_html()
+        assert "/* design-tokens:start" in page and "--avs-surface:" in page
+        assert '<body class="avs-wrapper avs-dark">' in page
+        assert '<body class="avs-wrapper">' in VectorSpace(points=[], dark_mode=False).to_html()
+
+    def test_to_html_background_is_the_theme_canvas_unless_chosen(self):
+        """A widget never shown has the trait's default background; the page then uses the theme's canvas colour."""
+        assert '"background": null' in VectorSpace(points=[]).to_html()
+        assert '"background": "#123456"' in VectorSpace(points=[], background="#123456").to_html()
+
     def test_to_html_custom_title(self):
         """Custom title, width, height appear in the output."""
         widget = VectorSpace(points=[])

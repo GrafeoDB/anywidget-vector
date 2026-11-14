@@ -4,28 +4,31 @@
 <meta charset="utf-8">
 <title>{title}</title>
 <style>
-body {{ margin: 0; overflow: hidden; font-family: sans-serif; }}
+/* The widget's colour, type and shape variables (the design-tokens block of ui/styles.css) */
+{theme_css}
+body {{ margin: 0; overflow: hidden; font-family: var(--avs-font-body); background: var(--avs-bg); color: var(--avs-text); }}
 #container {{ width: {width}; height: {height}; position: relative; }}
+/* The widget's tooltip (.avs-tooltip in ui/styles.css) */
 .tooltip {{
   display: none;
   position: absolute;
-  background: rgba(15, 15, 35, 0.92);
-  color: #e2e8f0;
+  background: var(--avs-surface);
+  border: 1px solid var(--avs-border);
+  color: var(--avs-text);
   padding: 8px 12px;
-  border-radius: 6px;
+  border-radius: var(--avs-radius-box);
   font-size: 12px;
   pointer-events: none;
   z-index: 100;
-  max-width: 260px;
-  border: 1px solid rgba(99, 102, 241, 0.3);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  max-width: 250px;
+  box-shadow: var(--avs-shadow-float);
 }}
-.tooltip-label {{ font-weight: 600; margin-bottom: 4px; color: #a5b4fc; }}
+.tooltip-label {{ font-weight: 600; margin-bottom: 4px; }}
 .tooltip-row {{ display: flex; justify-content: space-between; gap: 12px; }}
-.tooltip-key {{ color: #94a3b8; }}
+.tooltip-key {{ color: var(--avs-text-muted); }}
 </style>
 </head>
-<body>
+<body class="{theme_class}">
 <div id="container"></div>
 <div id="tooltip" class="tooltip"></div>
 <script type="module">

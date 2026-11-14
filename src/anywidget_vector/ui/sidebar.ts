@@ -3,6 +3,8 @@
  */
 import { ICONS } from "../static/icons.ts";
 import type { Panel, PanelCallbacks, PointData, WidgetModel } from "./types.ts";
+import { assignedRegistry, paletteFor } from "./colors.ts";
+import { closeButton, nameFields, panelControls } from "./panel.ts";
 
 export function createSidebar(model: WidgetModel, callbacks: PanelCallbacks): Panel {
   const panel = document.createElement("div");
@@ -16,11 +18,7 @@ export function createSidebar(model: WidgetModel, callbacks: PanelCallbacks): Pa
   const header = document.createElement("div");
   header.className = "avs-panel-header";
   header.innerHTML = "<span>Explorer</span>";
-  const closeBtn = document.createElement("button");
-  closeBtn.className = "avs-btn avs-btn-icon";
-  closeBtn.innerHTML = ICONS.close;
-  closeBtn.addEventListener("click", () => callbacks.onClose?.());
-  header.appendChild(closeBtn);
+  header.appendChild(closeButton(ICONS.close, "Close explorer", () => callbacks.onClose?.()));
   inner.appendChild(header);
 
   // === Collections Section ===
@@ -76,6 +74,8 @@ export function createSidebar(model: WidgetModel, callbacks: PanelCallbacks): Pa
     if (name) {
       const item = document.createElement("div");
       item.className = "avs-collection-item avs-active";
+      // The collection in use: a status, not a control
+      item.setAttribute("aria-current", "true");
       item.textContent = name;
       collectionsList.appendChild(item);
     } else {
@@ -150,6 +150,10 @@ export function createSidebar(model: WidgetModel, callbacks: PanelCallbacks): Pa
     });
 
     const sorted = Object.entries(groups).sort((a, b) => b[1] - a[1]);
+    // The same assignment the canvas draws with: the 8 largest categories in the data colours, the rest Other
+    const registry = assignedRegistry(model, colorField, points);
+    const palette = paletteFor(model);
+    const numeric = points.some((p) => typeof p[colorField] === "number");
     if (sorted.length === 0) {
       clusterContent.innerHTML = '<div class="avs-note">No clusters found</div>';
       return;
@@ -161,15 +165,34 @@ export function createSidebar(model: WidgetModel, callbacks: PanelCallbacks): Pa
       row.innerHTML =
         '<span class="avs-property-key">' + escapeHtml(String(key)) + "</span>" +
         '<span class="avs-property-value">' + count + "</span>";
+      if (!numeric) {
+        // The colour this cluster's points are drawn with; beyond the 8 largest, the shared Other colour
+        const slot = registry.slot(key);
+        const swatch = document.createElement("span");
+        swatch.className = "avs-swatch";
+        swatch.dataset.color = slot === null ? palette.other : palette.data[slot];
+        swatch.style.background = swatch.dataset.color;
+        swatch.title = slot === null ? "Other: beyond the 8 largest clusters" : `Colour ${slot + 1} of 8`;
+        row.prepend(swatch);
+      }
 
-      row.addEventListener("click", () => {
-        // Filter/highlight cluster
+      // Selects the cluster's points; a button for the keyboard too (Tab to it, Enter or Space)
+      row.setAttribute("role", "button");
+      row.tabIndex = 0;
+      const selectCluster = () => {
         const ids = points
           .filter((p) => String(p[colorField] ?? "unknown") === String(key))
           .map((p) => p.id)
           .filter(Boolean);
         model.set("selected_points", ids);
         model.save_changes();
+      };
+      row.addEventListener("click", selectCluster);
+      row.addEventListener("keydown", (e: KeyboardEvent) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          selectCluster();
+        }
       });
 
       clusterContent.appendChild(row);
@@ -293,6 +316,8 @@ export function createSidebar(model: WidgetModel, callbacks: PanelCallbacks): Pa
     updateClusters();
   });
   model.on("change:color_field", updateClusters);
+  // Each theme has its own data colours: the swatches follow the switch, as the points do
+  model.on("change:dark_mode", updateClusters);
   model.on("change:backend_config", updateCollections);
   model.on("change:backend", updateCollections);
   model.on("change:selected_points", updateDistanceInfo);
@@ -306,13 +331,8 @@ export function createSidebar(model: WidgetModel, callbacks: PanelCallbacks): Pa
   updateDimensions();
   updateClusters();
 
-  return {
-    element: panel,
-    open: () => panel.classList.add("avs-open"),
-    close: () => panel.classList.remove("avs-open"),
-    toggle: () => panel.classList.toggle("avs-open"),
-    isOpen: () => panel.classList.contains("avs-open"),
-  };
+  nameFields(panel);
+  return panelControls(panel);
 }
 
 // === Helpers ===

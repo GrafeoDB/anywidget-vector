@@ -4,12 +4,19 @@
 import { THREE, OrbitControls } from "./vendor-globals.ts";
 import { getPointColor, getPointSize } from "./canvas.ts";
 import type { PointStyleOpts } from "./canvas.ts";
+import { DARK, LIGHT } from "./palette.ts";
+import { CategoryRegistry } from "./registry.ts";
+import { categoricalCounts } from "./colors.ts";
+import { fitDistance } from "./frame.ts";
+import { applyInk } from "./ink.ts";
+import { labChrome } from "./lab.ts";
 import type { PointData } from "./types.ts";
 
 // Written into the page by widget.py's to_html before this bundle runs
 declare const DATA: PointData[];
 declare const OPTIONS: {
   background?: string;
+  dark_mode?: boolean;
   color_field?: string | null;
   color_scale?: string;
   color_domain?: [number, number] | null;
@@ -17,6 +24,7 @@ declare const OPTIONS: {
   size_range?: number[];
   show_axes?: boolean;
   show_grid?: boolean;
+  grid_divisions?: number;
   axis_labels?: { x?: string; y?: string; z?: string };
 };
 
@@ -28,7 +36,8 @@ const box = new THREE.Box3();
 DATA.forEach((p) => box.expandByPoint(new THREE.Vector3(p.x ?? 0, p.y ?? 0, p.z ?? 0)));
 // One point, or points that share a position, give an empty box: 1 keeps the sizes and the camera distance nonzero
 const dataSize = box.getSize(new THREE.Vector3()).length() || 1;
-const scaleFactor = dataSize / 10;
+// Points sized for the framed view, as in the widget (canvas.ts)
+const scaleFactor = dataSize / 6;
 const rawRange = OPTIONS.size_range || [0.02, 0.06];
 
 const opts: PointStyleOpts = {
@@ -37,7 +46,14 @@ const opts: PointStyleOpts = {
   colorDomain: OPTIONS.color_domain || null,
   sizeField: OPTIONS.size_field || null,
   sizeRange: [rawRange[0] * scaleFactor, rawRange[1] * scaleFactor],
+  palette: OPTIONS.dark_mode ? DARK : LIGHT,
+  // A fresh assignment from the page's data: the 8 largest categories get the data colours, as in the widget
+  registry: null,
 };
+if (opts.colorField) {
+  opts.registry = new CategoryRegistry();
+  opts.registry.assign(categoricalCounts(DATA, opts.colorField));
+}
 
 // Compute the color and size domains from the data when not explicitly set
 if (opts.colorField && !opts.colorDomain) {
@@ -54,7 +70,9 @@ if (opts.sizeField) {
 // ---------------------------------------------------------------------------
 const container = document.getElementById("container")!;
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(OPTIONS.background || "#1a1a2e");
+// The background chosen in Python, else the theme's canvas colour (as the widget)
+const background = OPTIONS.background || opts.palette.background;
+scene.background = new THREE.Color(background);
 
 const width = container.clientWidth;
 const height = container.clientHeight;
@@ -81,34 +99,17 @@ controls.dampingFactor = 0.05;
 // ---------------------------------------------------------------------------
 // Axes and grid
 // ---------------------------------------------------------------------------
-if (OPTIONS.show_axes) {
-  const axes = new THREE.AxesHelper(1.2);
-  scene.add(axes);
-  const labels = OPTIONS.axis_labels || { x: "X", y: "Y", z: "Z" };
-  function addAxisLabel(text: string, position: [number, number, number], color: number) {
-    const canvas = document.createElement("canvas");
-    const ctx = canvas.getContext("2d")!;
-    canvas.width = 64;
-    canvas.height = 32;
-    ctx.font = "bold 24px Arial";
-    ctx.fillStyle = "#" + color.toString(16).padStart(6, "0");
-    ctx.textAlign = "center";
-    ctx.fillText(text, 32, 24);
-    const texture = new THREE.CanvasTexture(canvas);
-    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture }));
-    sprite.position.set(position[0], position[1], position[2]);
-    sprite.scale.set(0.25, 0.125, 1);
-    scene.add(sprite);
-  }
-  addAxisLabel(labels.x || "X", [1.3, 0, 0], 0xff4444);
-  addAxisLabel(labels.y || "Y", [0, 1.3, 0], 0x44ff44);
-  addAxisLabel(labels.z || "Z", [0, 0, 1.3], 0x4444ff);
-}
-
-if (OPTIONS.show_grid) {
-  const gridHelper = new THREE.GridHelper(2, 10, 0x444444, 0x333333);
-  scene.add(gridHelper);
-}
+// The widget's own (lab.ts): grey axes with mono letters and a hairline grid
+scene.add(
+  labChrome({
+    showAxes: Boolean(OPTIONS.show_axes),
+    showGrid: Boolean(OPTIONS.show_grid),
+    labels: OPTIONS.axis_labels || {},
+    divisions: OPTIONS.grid_divisions || 10,
+    palette: opts.palette,
+    background,
+  }),
+);
 
 // ---------------------------------------------------------------------------
 // Points
@@ -120,6 +121,8 @@ if (DATA.length > 0) {
   // One instanced mesh for every point: one geometry, one material and one draw call, whatever the point count
   const geometry = new THREE.SphereGeometry(1, 16, 16);
   const material = new THREE.MeshPhongMaterial({ color: 0xffffff });
+  // Ink points, as in the widget (ink.ts): the body the colour over the background, the silhouette the full colour
+  applyInk(material, { value: new THREE.Color(background) });
   const mesh = new THREE.InstancedMesh(geometry, material, DATA.length);
   const matrix = new THREE.Matrix4();
   DATA.forEach((point, idx) => {
@@ -134,10 +137,15 @@ if (DATA.length > 0) {
   pointsGroup.add(mesh);
 
   // Auto-fit the camera to the data bounds
+  // Framed as in the widget: the cloud's real radius, from the same angle (frame.ts)
   const center = box.getCenter(new THREE.Vector3());
-  const distance = dataSize / (2 * Math.tan((Math.PI * camera.fov) / 360));
+  const distance = fitDistance(DATA.map((p) => ({ x: p.x ?? 0, y: p.y ?? 0, z: p.z ?? 0 })), center, camera.fov, camera.aspect) || 2;
   controls.target.copy(center);
-  camera.position.copy(center.clone().add(new THREE.Vector3(distance * 0.6, distance * 0.6, distance * 0.6)));
+  camera.position.copy(center.clone().add(new THREE.Vector3(0.6, 0.5, 0.8).normalize().multiplyScalar(distance)));
+  // Clipping planes for the data's scale, as the widget's fitToView
+  camera.near = Math.max(0.01, distance * 0.001);
+  camera.far = Math.max(1000, distance * 10);
+  camera.updateProjectionMatrix();
   controls.update();
 }
 

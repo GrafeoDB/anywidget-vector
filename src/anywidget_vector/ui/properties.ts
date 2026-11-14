@@ -1,6 +1,7 @@
 // Properties panel component for VectorSpace widget
 import { ICONS } from "../static/icons.ts";
 import type { PanelCallbacks, PointData, PropertiesPanel, WidgetModel } from "./types.ts";
+import { closeButton, panelControls } from "./panel.ts";
 
 export function createPropertiesPanel(model: WidgetModel, callbacks: PanelCallbacks): PropertiesPanel {
   const panel = document.createElement("div");
@@ -14,11 +15,7 @@ export function createPropertiesPanel(model: WidgetModel, callbacks: PanelCallba
   const header = document.createElement("div");
   header.className = "avs-panel-header";
   header.innerHTML = `<span>Properties</span>`;
-  const closeBtn = document.createElement("button");
-  closeBtn.className = "avs-btn avs-btn-icon";
-  closeBtn.innerHTML = ICONS.close;
-  closeBtn.addEventListener("click", () => callbacks.onClose?.());
-  header.appendChild(closeBtn);
+  header.appendChild(closeButton(ICONS.close, "Close properties", () => callbacks.onClose?.()));
   inner.appendChild(header);
 
   // Content container
@@ -26,11 +23,9 @@ export function createPropertiesPanel(model: WidgetModel, callbacks: PanelCallba
   content.className = "avs-properties-content";
   inner.appendChild(content);
 
-  // Initial state
-  showEmpty(content);
-
-  // Update on selection change
-  model.on("change:selected_points", () => {
+  // The selection's details: at mount (a selection the host set before the view), and whenever the selection or the
+  // points change
+  const showSelection = () => {
     const selectedIds = (model.get("selected_points") ?? []) as string[];
     const points = (model.get("points") ?? []) as PointData[];
     if (selectedIds.length === 0) {
@@ -45,14 +40,13 @@ export function createPropertiesPanel(model: WidgetModel, callbacks: PanelCallba
     } else {
       showMultipleSelection(content, selectedIds.length);
     }
-  });
+  };
+  showSelection();
+  model.on("change:selected_points", showSelection);
+  model.on("change:points", showSelection);
 
   return {
-    element: panel,
-    open: () => panel.classList.add("avs-open"),
-    close: () => panel.classList.remove("avs-open"),
-    toggle: () => panel.classList.toggle("avs-open"),
-    isOpen: () => panel.classList.contains("avs-open"),
+    ...panelControls(panel),
     setHoveredPoint: (point: PointData | null) => {
       const selectedIds = (model.get("selected_points") ?? []) as string[];
       if (point && selectedIds.length === 0) {
@@ -158,4 +152,13 @@ function formatValue(val: unknown): string {
   if (typeof val === "number") return val.toFixed(4);
   if (typeof val === "object") return JSON.stringify(val).slice(0, 50);
   return String(val).slice(0, 50);
+}
+
+/**
+ * What the Properties panel does when the selection changes: it opens on a selection and closes when it clears;
+ * null when the host turned the panel off (show_properties false).
+ */
+export function propertiesForSelection(selected: unknown[], showProperties: boolean): "open" | "close" | null {
+  if (!showProperties) return null;
+  return selected.length > 0 ? "open" : "close";
 }

@@ -73,9 +73,4 @@ export function colorScale(name: string): [number, number, number][] {
   return Object.hasOwn(COLOR_SCALES, name) ? COLOR_SCALES[name as ColorScaleName] : COLOR_SCALES.viridis;
 }
 
-export const CATEGORICAL_COLORS = [
-  "#6366f1", "#f59e0b", "#10b981", "#ef4444", "#8b5cf6",
-  "#06b6d4", "#f97316", "#84cc16", "#ec4899", "#14b8a6"
-];
-
 export const SHAPES = ["sphere", "cube", "cone", "tetrahedron", "octahedron", "cylinder"];

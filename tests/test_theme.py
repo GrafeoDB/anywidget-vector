@@ -150,7 +150,7 @@ results.background = model.get("background");
         assert result["seen"] == [False, True, False, True]
         assert result["applied"] == [False, True, False, True]
         assert result["explicit"] is False
-        assert result["background"] == "#181c1a"
+        assert result["background"] == "#161a19"
 
     def test_a_dark_mode_set_after_render_stops_following_also_for_later_views(self, tmp_path):
         result = _run_theme(
@@ -170,7 +170,7 @@ results.laterView = later;
             tmp_path,
         )
         assert result["explicit"] is True
-        assert result["background"] == "#181c1a"
+        assert result["background"] == "#161a19"
         assert result["afterPageChange"] is True
         assert result["laterView"] == [True]
 
