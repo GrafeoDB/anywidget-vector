@@ -561,6 +561,11 @@ class TestVendoredThree:
         assert result["orbit"] == "function"
 
 
-def test_sdist_leaves_out_root_dotfiles():
+@pytest.mark.skipif(not (ROOT / ".git").exists(), reason="needs a git checkout to list the tracked files")
+def test_sdist_includes_every_tracked_top_level_path():
     hatch = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["tool"]["hatch"]["build"]
-    assert "/.*" in hatch["targets"]["sdist"]["exclude"]
+    listed = set(hatch["targets"]["sdist"]["only-include"]) | {"pyproject.toml"}
+    tracked = subprocess.run(["git", "ls-files"], cwd=ROOT, capture_output=True, text=True, check=True).stdout
+    top_level = {line.split("/")[0] for line in tracked.splitlines() if line}
+    missing = sorted(top_level - listed)
+    assert missing == [], f"add {missing} to only-include in pyproject.toml so the sdist ships them"

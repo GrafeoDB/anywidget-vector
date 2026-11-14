@@ -72,8 +72,23 @@ build-backend = "hatchling.build"
 packages = ["src/anywidget_vector"]
 
 [tool.hatch.build.targets.sdist]
-# Dot-files and dot-folders at the root (CI config, local tool folders) are not part of the source package
-exclude = ["/.*"]
+only-include = [
+    "src",
+    "tests",
+    "examples",
+    "scripts",
+    "assets",
+    ".github",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE",
+    "package.json",
+    "package-lock.json",
+    "tsconfig.json",
+    "uv.lock",
+    ".python-version",
+    ".gitignore",
+]
 
 [tool.ruff]
 line-length = 120
