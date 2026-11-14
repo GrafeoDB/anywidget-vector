@@ -7,7 +7,10 @@
 
 Works with Marimo, Jupyter, VS Code, Colab, anywhere [anywidget](https://anywidget.dev/) runs.
 
-![anywidget-vector demo](assets/demo.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/demo-dark.png">
+  <img src="assets/demo-light.png" alt="anywidget-vector showing six clusters of embeddings in 3D, coloured by topic, with the explorer open">
+</picture>
 
 ## Features
 
@@ -25,8 +28,7 @@ uv add anywidget-vector
 uv add "anywidget-vector[grafeo]"   # with the embedded Grafeo backend (grafeo 0.6)
 ```
 
-Requires Python 3.12 or later. The `grafeo` extra installs grafeo 0.6 (`grafeo>=0.6.2,<0.7`; anywidget-vector 0.4.0 still accepts grafeo 0.6.0 and 0.6.1); the browser-side WASM mode loads the matching `@grafeo-db/wasm` from a CDN. Upgrading from 0.3 with Grafeo:
-see [Upgrading to 0.4](#upgrading-to-04).
+Requires Python 3.12 or later. The `grafeo` extra installs grafeo 0.6 (`grafeo>=0.6.2,<0.7`); the browser-side WASM mode loads the matching `@grafeo-db/wasm` from a CDN.
 
 ## Quick Start
 
@@ -125,11 +127,15 @@ widget = VectorSpace.from_pinecone(index, limit=5000)
 ### Weaviate
 
 ```python
-import weaviate
+import weaviate  # weaviate-client 3.x
 
 client = weaviate.Client("http://localhost:8080")
 widget = VectorSpace.from_weaviate(client, "Article", limit=5000)
 ```
+
+`from_weaviate` runs a GraphQL `Get` through the v3 client's `client.query`, so it takes a weaviate-client 3.x
+`weaviate.Client`. The `weaviate` extra installs 4.x, which has no such client: install `weaviate-client<4` for this
+method.
 
 ### LanceDB
 
@@ -400,26 +406,7 @@ The browser engine version is set in one place, `GRAFEO_WASM_VERSION` in
 `src/anywidget_vector/backends/grafeo/embed.ts`, and moves in lockstep with the `grafeo` extra. Before a bump,
 run `node tests/js/wasm_smoke.ts <unpacked @grafeo-db/wasm package>`.
 
-### Upgrading to 0.4
-
-0.4 moves the Grafeo backend to Grafeo 0.6, which changes some query results. What to check:
-
-- **Install**: the `grafeo` extra needs grafeo 0.6; `uv add "anywidget-vector[grafeo]"` upgrades it. The `wasm` mode
-  loads `@grafeo-db/wasm` 0.6 from the CDN by itself.
-- **Database files**: Grafeo 0.6 keeps every database in a single file. The first read-write open of a 0.5.x
-  database migrates it and keeps the old file as `<file>.pre-0.6`; 0.5.x cannot open the migrated file, so stop
-  every 0.5.x process first and keep the `.pre-0.6` copy until you no longer need to go back. Opening a directory that
-  is not a 0.5.x database fails: pass a file path, such as `data/vectors.grafeo`.
-- **Numbers with a point**: `0.1` is an exact decimal in GQL, so `0.0/0.0` and `1/0` now fail the query (division by
-  zero) instead of giving NaN or null, and integer overflow fails too. Write float literals with an exponent
-  (`0.0e0 / 0.0e0`) where you want IEEE results.
-- **Writes**: a `WHERE` right after `INSERT`, `CREATE`, `MERGE` or `DELETE` is an error; put the condition before the
-  write. An `INSERT` alone returns no rows.
-- **Ordering**: GQL `ORDER BY` puts nulls last in both directions; add `NULLS FIRST` for the old descending order.
-- **Errors**: a vector search with a query of the wrong size raises `grafeo.GrafeoError` (Grafeo 0.5.44 panicked);
-  the widget shows it as a query error either way.
-
-See Grafeo's [Upgrading to 0.6](https://grafeo.dev/upgrading/0.6/) for the full list.
+Coming from grafeo 0.5: see grafeo's [Upgrading to 0.6](https://docs.grafeo.dev/get-started/upgrading/0.6/).
 
 ## Export
 
