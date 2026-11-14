@@ -1,6 +1,9 @@
-# anywidget-vector
-
-Interactive 3D vector visualization for Python notebooks.
+<picture>
+  <source media="(max-width: 556px) and (prefers-color-scheme: dark), (min-width: 768px) and (max-width: 844px) and (prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/GrafeoDB/anywidget-vector/main/.github/readme/header-narrow-dark.svg">
+  <source media="(max-width: 556px), (min-width: 768px) and (max-width: 844px)" srcset="https://raw.githubusercontent.com/GrafeoDB/anywidget-vector/main/.github/readme/header-narrow-light.svg">
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/GrafeoDB/anywidget-vector/main/.github/readme/header-dark.svg">
+  <img alt="anywidget-vector: Interactive 3D vector visualization for Python notebooks." src="https://raw.githubusercontent.com/GrafeoDB/anywidget-vector/main/.github/readme/header-light.svg" width="100%">
+</picture>
 
 Works with Marimo, Jupyter, VS Code, Colab, anywhere [anywidget](https://anywidget.dev/) runs.
 
