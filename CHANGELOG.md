@@ -1,6 +1,6 @@
 # Changelog
 
-## [1.0.0] - Unreleased
+## [1.0.0] - 2026-11-14
 
 Shared look release: the widget takes the look of the anywidgets family (graphite chrome, ink points, an eight-colour palette), opens framed on the whole cloud and, with no height given, is 16:10 of its width instead of square. No trait, method or CSS variable is removed; to keep a colour, set `color` on a point or the `--avs-*` variables, and pass `height` for a fixed height.
 
