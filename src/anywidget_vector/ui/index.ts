@@ -6,7 +6,9 @@ import { followHostTheme, trackModelListeners } from "./theme.ts";
 import { createSidebar } from "./sidebar.ts";
 import { createToolbar } from "./toolbar.ts";
 import { createSettingsPanel } from "./settings.ts";
-import { createPropertiesPanel } from "./properties.ts";
+import { createPropertiesPanel, propertiesForSelection } from "./properties.ts";
+import { wrapperSize } from "./size.ts";
+import { mountCanvasNote } from "./states.ts";
 import { createCanvas } from "./canvas.ts";
 import { executeBackendQuery, isLatestQuery, startQuery } from "./query.ts";
 import type { Panel, PropertiesPanel, WidgetModel } from "./types.ts";
@@ -19,14 +21,8 @@ function render({ model: widgetModel, el }: { model: WidgetModel; el: HTMLElemen
   const wrapper = document.createElement("div");
   wrapper.className = "avs-wrapper";
 
-  const _w = model.get("width");
-  const _h = model.get("height");
-  wrapper.style.width = _w > 0 ? _w + "px" : "100%";
-  if (_h > 0) {
-    wrapper.style.height = _h + "px";
-  } else {
-    wrapper.style.aspectRatio = "1 / 1";
-  }
+  // No size given: the cell's width, 16:10, between what the chrome needs and 80% of the screen (size.ts)
+  Object.assign(wrapper.style, wrapperSize(model.get("width") || 0, model.get("height") || 0));
 
   el.appendChild(wrapper);
 
@@ -75,6 +71,8 @@ function render({ model: widgetModel, el }: { model: WidgetModel; el: HTMLElemen
   canvasContainer.style.width = "100%";
   canvasContainer.style.height = "100%";
   main.appendChild(canvasContainer);
+  // An empty widget says how to fill it (states.ts)
+  mountCanvasNote(canvasContainer, model);
 
   if (model.get("show_settings")) {
     settingsPanel = createSettingsPanel(model, {
@@ -87,7 +85,18 @@ function render({ model: widgetModel, el }: { model: WidgetModel; el: HTMLElemen
     onClose: () => propertiesPanel?.close(),
   });
   main.appendChild(propertiesPanel.element);
-  if (model.get("show_properties")) propertiesPanel.open();
+  // Properties opens when points are selected and closes when the selection clears; the toolbar button still toggles it
+  const followSelection = () => {
+    const action = propertiesForSelection(model.get("selected_points") || [], Boolean(model.get("show_properties")));
+    if (action === "open" && !propertiesPanel.isOpen()) {
+      settingsPanel?.close();
+      propertiesPanel.open();
+    } else if (action === "close") {
+      propertiesPanel.close();
+    }
+  };
+  model.on("change:selected_points", followSelection);
+  followSelection();
 
   let canvas: ReturnType<typeof createCanvas>;
   try {

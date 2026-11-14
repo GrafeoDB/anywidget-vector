@@ -561,6 +561,6 @@ class TestVendoredThree:
         assert result["orbit"] == "function"
 
 
-def test_sdist_leaves_out_local_agent_files():
+def test_sdist_leaves_out_root_dotfiles():
     hatch = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["tool"]["hatch"]["build"]
-    assert ".claude" in hatch["targets"]["sdist"]["exclude"]
+    assert "/.*" in hatch["targets"]["sdist"]["exclude"]

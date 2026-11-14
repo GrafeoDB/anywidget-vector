@@ -4,12 +4,17 @@
 import { THREE, OrbitControls } from "./vendor-globals.ts";
 import { getPointColor, getPointSize } from "./canvas.ts";
 import type { PointStyleOpts } from "./canvas.ts";
+import { DARK, LIGHT } from "./palette.ts";
+import { CategoryRegistry } from "./registry.ts";
+import { categoricalCounts } from "./colors.ts";
+import { fitDistance } from "./frame.ts";
 import type { PointData } from "./types.ts";
 
 // Written into the page by widget.py's to_html before this bundle runs
 declare const DATA: PointData[];
 declare const OPTIONS: {
   background?: string;
+  dark_mode?: boolean;
   color_field?: string | null;
   color_scale?: string;
   color_domain?: [number, number] | null;
@@ -28,7 +33,8 @@ const box = new THREE.Box3();
 DATA.forEach((p) => box.expandByPoint(new THREE.Vector3(p.x ?? 0, p.y ?? 0, p.z ?? 0)));
 // One point, or points that share a position, give an empty box: 1 keeps the sizes and the camera distance nonzero
 const dataSize = box.getSize(new THREE.Vector3()).length() || 1;
-const scaleFactor = dataSize / 10;
+// Points sized for the framed view, as in the widget (canvas.ts)
+const scaleFactor = dataSize / 6;
 const rawRange = OPTIONS.size_range || [0.02, 0.06];
 
 const opts: PointStyleOpts = {
@@ -37,7 +43,14 @@ const opts: PointStyleOpts = {
   colorDomain: OPTIONS.color_domain || null,
   sizeField: OPTIONS.size_field || null,
   sizeRange: [rawRange[0] * scaleFactor, rawRange[1] * scaleFactor],
+  palette: OPTIONS.dark_mode ? DARK : LIGHT,
+  // A fresh assignment from the page's data: the 8 largest categories get the data colours, as in the widget
+  registry: null,
 };
+if (opts.colorField) {
+  opts.registry = new CategoryRegistry();
+  opts.registry.assign(categoricalCounts(DATA, opts.colorField));
+}
 
 // Compute the color and size domains from the data when not explicitly set
 if (opts.colorField && !opts.colorDomain) {
@@ -134,10 +147,11 @@ if (DATA.length > 0) {
   pointsGroup.add(mesh);
 
   // Auto-fit the camera to the data bounds
+  // Framed as in the widget: the cloud's real radius, from the same angle (frame.ts)
   const center = box.getCenter(new THREE.Vector3());
-  const distance = dataSize / (2 * Math.tan((Math.PI * camera.fov) / 360));
+  const distance = fitDistance(DATA.map((p) => ({ x: p.x ?? 0, y: p.y ?? 0, z: p.z ?? 0 })), center, camera.fov, camera.aspect) || 2;
   controls.target.copy(center);
-  camera.position.copy(center.clone().add(new THREE.Vector3(distance * 0.6, distance * 0.6, distance * 0.6)));
+  camera.position.copy(center.clone().add(new THREE.Vector3(0.6, 0.5, 0.8).normalize().multiplyScalar(distance)));
   controls.update();
 }
 

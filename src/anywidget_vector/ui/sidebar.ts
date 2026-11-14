@@ -3,6 +3,7 @@
  */
 import { ICONS } from "../static/icons.ts";
 import type { Panel, PanelCallbacks, PointData, WidgetModel } from "./types.ts";
+import { categoricalCounts, categoryRegistry, paletteFor } from "./colors.ts";
 
 export function createSidebar(model: WidgetModel, callbacks: PanelCallbacks): Panel {
   const panel = document.createElement("div");
@@ -76,6 +77,7 @@ export function createSidebar(model: WidgetModel, callbacks: PanelCallbacks): Pa
     if (name) {
       const item = document.createElement("div");
       item.className = "avs-collection-item avs-active";
+      item.setAttribute("aria-pressed", "true");
       item.textContent = name;
       collectionsList.appendChild(item);
     } else {
@@ -150,6 +152,11 @@ export function createSidebar(model: WidgetModel, callbacks: PanelCallbacks): Pa
     });
 
     const sorted = Object.entries(groups).sort((a, b) => b[1] - a[1]);
+    // The same assignment the canvas draws with: the 8 largest categories in the data colours, the rest Other
+    const registry = categoryRegistry(model, colorField);
+    registry.assign(categoricalCounts(points, colorField));
+    const palette = paletteFor(model);
+    const numeric = points.some((p) => typeof p[colorField] === "number");
     if (sorted.length === 0) {
       clusterContent.innerHTML = '<div class="avs-note">No clusters found</div>';
       return;
@@ -161,6 +168,16 @@ export function createSidebar(model: WidgetModel, callbacks: PanelCallbacks): Pa
       row.innerHTML =
         '<span class="avs-property-key">' + escapeHtml(String(key)) + "</span>" +
         '<span class="avs-property-value">' + count + "</span>";
+      if (!numeric) {
+        // The colour this cluster's points are drawn with; beyond the 8 largest, the shared Other colour
+        const slot = registry.slot(key);
+        const swatch = document.createElement("span");
+        swatch.className = "avs-swatch";
+        swatch.dataset.color = slot === null ? palette.other : palette.data[slot];
+        swatch.style.background = swatch.dataset.color;
+        swatch.title = slot === null ? "Other: beyond the 8 largest clusters" : `Colour ${slot + 1} of 8`;
+        row.prepend(swatch);
+      }
 
       row.addEventListener("click", () => {
         // Filter/highlight cluster
@@ -293,6 +310,8 @@ export function createSidebar(model: WidgetModel, callbacks: PanelCallbacks): Pa
     updateClusters();
   });
   model.on("change:color_field", updateClusters);
+  // Each theme has its own data colours: the swatches follow the switch, as the points do
+  model.on("change:dark_mode", updateClusters);
   model.on("change:backend_config", updateCollections);
   model.on("change:backend", updateCollections);
   model.on("change:selected_points", updateDistanceInfo);

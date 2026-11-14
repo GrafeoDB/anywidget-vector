@@ -1,5 +1,35 @@
 # Changelog
 
+## [1.0.0] - Unreleased
+
+Shared look release: the widget takes the look of the anywidgets family (graphite chrome, ink points, an eight-colour palette), opens framed on the whole cloud and, with no height given, is 16:10 of its width instead of square. No trait, method or CSS variable is removed; to keep a colour, set `color` on a point or the `--avs-*` variables, and pass `height` for a fixed height.
+
+### Added
+
+- **Cluster swatches**: the explorer's cluster list shows each cluster's colour; clusters beyond the eight largest are marked "Other".
+- **Query errors in view**: a failed query shows its message in a banner under the toolbar (before, only inside Settings).
+- **Empty state**: an empty widget shows "Nothing to show yet. Pass points from Python, or run a query."
+- **Keyboard focus**: buttons, menus and checkboxes show a focus ring, and the dark mode switch can be reached with the keyboard.
+
+### Changed
+
+- **Default look**: the chrome is green-tinted graphite with hairline borders, labels and values use JetBrains Mono (falling back to `ui-monospace`), and the tooltip follows the theme instead of black. Controls take the new `--avs-radius-control` (5px); `--avs-radius` stays and now sets the frame (3px, `--avs-radius-box`).
+- **Data palette**: `color_field` categories take eight colours in a fixed order, given to the eight largest by count; the rest are "Other" and recede towards the background. A category keeps its colour while the widget is shown, and `to_html()` pages use the light or dark palette of the widget.
+- **Ink points**: a point's body is its colour at 38% over the background and its silhouette the full colour; shapes, `shape_field` and `shape_map` are unchanged.
+- **Camera**: the view opens framed on the whole cloud from an angle (before, the camera started inside it), also in `to_html()` pages; selected points are framed the same way, never closer than a quarter of the whole view.
+- **Point size**: points are drawn 1.67 times larger for the same `size_range`, to suit the framed view.
+- **Size**: with `height` 0 (the default) the widget is 16:10 of its width, at least 360px and at most 80% of the screen high (was as tall as wide).
+- **Axes and grid**: grey axes with mono letters and a faint hairline grid replace the red, green and blue axes; switching the theme recolours the points, axes and grid.
+- **Canvas controls**: the selection modes and zoom buttons are one floating card at the bottom right, as in anywidget-graph. Under 480px wide the card leaves out zoom in and out (pinch or the mouse wheel still zooms).
+- **Properties panel**: opens when points are selected and closes when the selection clears, instead of opening empty on load; `show_properties=False` still keeps it out.
+- **Toggles look pressed**: the active selection mode and the chosen collection look pressed instead of filled, so only Run is a filled button.
+- **Settings**: each field sits under its label at full width.
+
+### Fixed
+
+- **Run button in dark mode**: its play icon was white on the near-white button; it now uses the dark text colour.
+- **Browser controls follow the widget's theme**: scrollbars, checkboxes and menus are drawn in the widget's light or dark theme instead of the page's.
+
 ## [0.4.1] - 2026-11-12
 
 Grafeo 0.6.2 release: the Grafeo backend moves to grafeo 0.6.2 in Python and in the browser, and the front end is TypeScript, bundled by esbuild. An environment with the `grafeo` extra upgrades grafeo to 0.6.2 or later; to keep grafeo 0.6.0 or 0.6.1, stay on anywidget-vector 0.4.0 and pin grafeo.
@@ -71,7 +101,7 @@ Requires Python 3.12 or later; the Grafeo backend requires grafeo 0.6. See "Upgr
 - **WASM engine loaded twice**: Two copies of the widget module on one page (a cell run again, a marimo reconnect, anywidget-graph next to it) each instantiated the cached `@grafeo-db/wasm` glue, which broke the databases of the first copy. The loading promise now lives on `globalThis`, keyed by the glue URL
 - **Stale query results**: A slower, older browser-side query could overwrite the result of a newer one. Only the newest query per widget now sets points, errors and the loading state
 - **HTML export sizes**: `to_html(width=..., height=...)` placed the values in the page's `<style>` unchecked; a value that is not a plain CSS size now raises `ValueError`
-- **Source distribution**: A local `uv build` packed the `.claude/` folder (agent notes and local settings) into the sdist; it is now excluded
+- **Source distribution**: A local `uv build` packed local tool files into the sdist; they are now excluded
 
 ## [0.3.2] - 2026-03-16
 

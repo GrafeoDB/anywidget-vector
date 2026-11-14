@@ -162,6 +162,10 @@ widget = VectorSpace(
 )
 ```
 
+### Look and colours
+
+The widget shares its look with anywidget-graph and anywidget-archimate: graphite chrome with hairline borders, and points drawn with a light fill of their colour and the full colour at their edge. A categorical `color_field` (clusters, say) takes eight colours in a fixed order: the eight largest categories by count get them, the rest share a neutral "Other" grey that recedes towards the background. The explorer's cluster list shows each cluster's colour. A `color` on a point wins over the palette, and the `--avs-*` CSS variables set the chrome.
+
 ### Shapes
 
 ```python
@@ -290,8 +294,8 @@ distances = widget.compute_distances(
 ```python
 widget = VectorSpace(
     points=data,
-    width=1000,
-    height=700,
+    width=1000,                   # 0 (default) fills the cell's width
+    height=700,                   # 0 (default): 16:10 of the width, at least 360px, at most 80% of the screen
     dark_mode=None,               # None (default) follows the page theme; True or False fixes it
     background=None,              # None (default) uses the theme's canvas color
     show_axes=True,
@@ -426,6 +430,9 @@ widget.save_html("vectors.html")            # Write HTML to file
 Three.js is bundled with the package (`ui/vendor/three.min.js`, built by `scripts/vendor`), so the widget and its
 HTML export work offline and under a strict Content Security Policy. Only the `wasm` Grafeo mode loads code from a
 CDN.
+
+The export assigns category colours from the exported data, in its own order, so a category can take a different
+palette colour than it had in the live widget.
 
 NaN and infinity cannot travel as JSON, so the widget replaces them with `None` in point values (with a
 `RuntimeWarning`); a missing coordinate is drawn at 0.

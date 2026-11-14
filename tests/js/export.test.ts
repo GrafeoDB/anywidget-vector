@@ -82,7 +82,7 @@ test("every point is one instance of a single mesh", { skip }, async () => {
 });
 
 test("point sizes scale with the data extent like the live canvas", { skip }, async () => {
-  // Extent 100 on x: the live canvas multiplies size_range by 100 / 10; no size_field, so the middle of the range
+  // Extent 100 on x: the live canvas multiplies size_range by 100 / 6; no size_field, so the middle of the range
   // (instance matrices are float32)
   const { meshes } = await exportPage([
     { id: "a", x: 0, y: 0, z: 0 },
@@ -91,7 +91,7 @@ test("point sizes scale with the data extent like the live canvas", { skip }, as
   const matrix = new vendor.THREE.Matrix4();
   meshes[0].getMatrixAt(0, matrix);
   const scale = new vendor.THREE.Vector3().setFromMatrixScale(matrix);
-  assert.ok(Math.abs(scale.x - 0.04 * 10) < 1e-6, `sphere scale ${scale.x}, expected 0.4`);
+  assert.ok(Math.abs(scale.x - (0.04 * 100) / 6) < 1e-5, `sphere scale ${scale.x}, expected ${(0.04 * 100) / 6}`);
 });
 
 test("a single point puts the camera away from its target", { skip }, async () => {

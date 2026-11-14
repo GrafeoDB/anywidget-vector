@@ -17,30 +17,122 @@
   function colorScale(name) {
     return Object.hasOwn(COLOR_SCALES, name) ? COLOR_SCALES[name] : COLOR_SCALES.viridis;
   }
-  var CATEGORICAL_COLORS = [
-    "#6366f1",
-    "#f59e0b",
-    "#10b981",
-    "#ef4444",
-    "#8b5cf6",
-    "#06b6d4",
-    "#f97316",
-    "#84cc16",
-    "#ec4899",
-    "#14b8a6"
-  ];
+
+  // palette.ts
+  var LIGHT = {
+    data: ["#5c93d9", "#be6133", "#008f6d", "#8a6000", "#cd7498", "#3c802c", "#6a5cab", "#b7615b"],
+    other: "#8a918d",
+    background: "#ffffff",
+    edge: "#b9c3be"
+  };
+  var DARK = {
+    data: ["#4076b9", "#ac5428", "#008665", "#8f6900", "#b65b81", "#3c7d2d", "#7161b4", "#b6605a"],
+    other: "#676f6b",
+    background: "#161a19",
+    edge: "#46504b"
+  };
+
+  // registry.ts
+  var SLOTS = 8;
+  var CategoryRegistry = class {
+    slots = /* @__PURE__ */ new Map();
+    other = /* @__PURE__ */ new Set();
+    next = 0;
+    /** Give the largest new categories the free slots, in descending count (ties by name); the rest become Other. */
+    assign(counts) {
+      const fresh = [...counts.entries()].filter(([category]) => !this.slots.has(category) && !this.other.has(category)).sort(([a, ca], [b, cb]) => cb - ca || (a < b ? -1 : a > b ? 1 : 0));
+      for (const [category] of fresh) {
+        if (this.next < SLOTS) this.slots.set(category, this.next++);
+        else this.other.add(category);
+      }
+    }
+    /** The category's slot (0 to 7), or null for Other and for a category never assigned. */
+    slot(category) {
+      return this.slots.get(category) ?? null;
+    }
+    /** The category's colour in a theme: its slot's data colour, else Other. */
+    colorFor(category, palette) {
+      const slot = this.slot(category);
+      return slot === null ? palette.other : palette.data[slot];
+    }
+  };
+  function countBy(items, key) {
+    const counts = /* @__PURE__ */ new Map();
+    for (const item of items) {
+      const k = key(item);
+      if (k !== void 0) counts.set(k, (counts.get(k) ?? 0) + 1);
+    }
+    return counts;
+  }
+  function parsed(color) {
+    const c = color.trim();
+    const hex = /^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i.exec(c)?.[1];
+    if (hex) {
+      const full = hex.length === 3 ? hex.split("").map((d) => d + d).join("") : hex.slice(0, 6);
+      return [0, 2, 4].map((i) => parseInt(full.slice(i, i + 2), 16));
+    }
+    const rgb = /^rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)/i.exec(c);
+    return rgb ? rgb.slice(1, 4).map((v) => Math.round(Math.min(255, Number(v)))) : null;
+  }
+  var RESOLVED = /* @__PURE__ */ new Map();
+  function channels(color) {
+    const direct = parsed(color);
+    if (direct || typeof document === "undefined") return direct;
+    if (!RESOLVED.has(color)) {
+      const ctx = document.createElement("canvas").getContext("2d");
+      let rgb = null;
+      if (ctx) {
+        ctx.fillStyle = "#000000";
+        ctx.fillStyle = color;
+        rgb = parsed(String(ctx.fillStyle));
+      }
+      RESOLVED.set(color, rgb);
+    }
+    return RESOLVED.get(color) ?? null;
+  }
+  function mixOver(color, background, alpha) {
+    const c = channels(color);
+    const b = channels(background);
+    if (!c || !b) return color;
+    return "#" + c.map((v, i) => Math.round(alpha * v + (1 - alpha) * b[i]).toString(16).padStart(2, "0")).join("");
+  }
+
+  // colors.ts
+  function categoricalCounts(points, field) {
+    return countBy(points, (p) => {
+      const v = p[field];
+      return v === void 0 || v === null || typeof v === "number" ? void 0 : String(v);
+    });
+  }
+  var OTHER_RECEDE = 0.7;
+  function otherInk(palette) {
+    return mixOver(palette.other, palette.background, OTHER_RECEDE);
+  }
+  function categoryColor(value, registry, palette) {
+    const slot = value === void 0 || value === null || !registry ? null : registry.slot(String(value));
+    return slot === null ? otherInk(palette) : palette.data[slot];
+  }
+
+  // frame.ts
+  function fitDistance(points, center, fovDeg, aspect) {
+    let radius = 0;
+    for (const p of points) radius = Math.max(radius, Math.hypot(p.x - center.x, p.y - center.y, p.z - center.z));
+    const halfV = fovDeg * Math.PI / 360;
+    const half = aspect < 1 ? Math.atan(Math.tan(halfV) * aspect) : halfV;
+    return radius / Math.sin(half) * 1.08;
+  }
 
   // canvas.ts
   function getPointColor(point, opts2) {
     if (point.color) return new THREE.Color(point.color);
-    if (opts2.colorField && point[opts2.colorField] !== void 0) {
+    if (opts2.colorField) {
       const value = point[opts2.colorField];
       if (typeof value === "number") {
         return getColorFromScale(value, opts2.colorScale, opts2.colorDomain);
       }
-      return getCategoricalColor(value);
+      return new THREE.Color(categoryColor(value, opts2.registry, opts2.palette));
     }
-    return new THREE.Color(6514417);
+    return new THREE.Color(opts2.palette.data[0]);
   }
   function getPointSize(point, opts2) {
     if (point.size !== void 0) return point.size;
@@ -70,32 +162,27 @@
       c1[2] + f * (c2[2] - c1[2])
     );
   }
-  function hashString(str) {
-    let hash = 0;
-    for (let i = 0; i < str.length; i++) {
-      hash = (hash << 5) - hash + str.charCodeAt(i);
-      hash |= 0;
-    }
-    return Math.abs(hash);
-  }
-  function getCategoricalColor(value) {
-    const idx = hashString(String(value)) % CATEGORICAL_COLORS.length;
-    return new THREE.Color(CATEGORICAL_COLORS[idx]);
-  }
 
   // export.ts
   var box = new THREE.Box3();
   DATA.forEach((p) => box.expandByPoint(new THREE.Vector3(p.x ?? 0, p.y ?? 0, p.z ?? 0)));
   var dataSize = box.getSize(new THREE.Vector3()).length() || 1;
-  var scaleFactor = dataSize / 10;
+  var scaleFactor = dataSize / 6;
   var rawRange = OPTIONS.size_range || [0.02, 0.06];
   var opts = {
     colorField: OPTIONS.color_field || null,
     colorScale: OPTIONS.color_scale || "viridis",
     colorDomain: OPTIONS.color_domain || null,
     sizeField: OPTIONS.size_field || null,
-    sizeRange: [rawRange[0] * scaleFactor, rawRange[1] * scaleFactor]
+    sizeRange: [rawRange[0] * scaleFactor, rawRange[1] * scaleFactor],
+    palette: OPTIONS.dark_mode ? DARK : LIGHT,
+    // A fresh assignment from the page's data: the 8 largest categories get the data colours, as in the widget
+    registry: null
   };
+  if (opts.colorField) {
+    opts.registry = new CategoryRegistry();
+    opts.registry.assign(categoricalCounts(DATA, opts.colorField));
+  }
   if (opts.colorField && !opts.colorDomain) {
     const values = DATA.map((p) => p[opts.colorField]).filter((v) => typeof v === "number");
     if (values.length > 0) opts.colorDomain = [Math.min(...values), Math.max(...values)];
@@ -170,9 +257,9 @@
     mesh.computeBoundingSphere();
     pointsGroup.add(mesh);
     const center = box.getCenter(new THREE.Vector3());
-    const distance = dataSize / (2 * Math.tan(Math.PI * camera.fov / 360));
+    const distance = fitDistance(DATA.map((p) => ({ x: p.x ?? 0, y: p.y ?? 0, z: p.z ?? 0 })), center, camera.fov, camera.aspect) || 2;
     controls.target.copy(center);
-    camera.position.copy(center.clone().add(new THREE.Vector3(distance * 0.6, distance * 0.6, distance * 0.6)));
+    camera.position.copy(center.clone().add(new THREE.Vector3(0.6, 0.5, 0.8).normalize().multiplyScalar(distance)));
     controls.update();
   }
   var tooltipEl = document.getElementById("tooltip");

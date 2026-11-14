@@ -827,6 +827,8 @@ class VectorSpace(anywidget.AnyWidget):
         """
         options = {
             "background": self.background,
+            # The page draws in this theme's data colours (ui/palette.ts)
+            "dark_mode": self.dark_mode,
             "color_field": self.color_field,
             "color_scale": self.color_scale,
             "color_domain": self.color_domain,

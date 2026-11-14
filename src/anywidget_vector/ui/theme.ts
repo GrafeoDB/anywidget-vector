@@ -5,7 +5,9 @@ import type { WidgetModel } from "./types.ts";
 // the settings toggle), which sets _theme_explicit. A background chosen the same way sets _background_explicit
 // and is never replaced by the theme's canvas color.
 
-export const THEME_BACKGROUNDS = { dark: "#181c1a", light: "#ffffff" };
+// The canvas colour of each theme: the design tokens' background (palette.ts; tests/js/tokens.test.ts keeps them
+// equal). Written out here because tests/test_theme.py runs this file on its own, without its imports.
+export const THEME_BACKGROUNDS = { dark: "#161a19", light: "#ffffff" };
 
 // How many theme writes by a widget are running right now. Writes are synchronous, so a change event fired while
 // this is above 0 is the widget's own, not a user's choice. It lives on globalThis, not on the model: anywidget

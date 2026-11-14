@@ -84,6 +84,28 @@ export function createToolbar(model: WidgetModel, callbacks: ToolbarCallbacks): 
   propsBtn.addEventListener("click", () => callbacks.onToggleProperties?.());
   toolbar.appendChild(propsBtn);
 
+  // A failed query's message, under the toolbar and over the canvas (as in the graph widget); it was only in Settings
+  const queryError = document.createElement("div");
+  queryError.className = "avs-query-error";
+  queryError.setAttribute("role", "alert");
+  const queryErrorText = document.createElement("span");
+  queryErrorText.className = "avs-query-error-text";
+  const queryErrorClose = document.createElement("button");
+  queryErrorClose.className = "avs-btn avs-btn-sm";
+  queryErrorClose.innerHTML = ICONS.close;
+  queryErrorClose.title = "Dismiss";
+  queryErrorClose.addEventListener("click", () => { queryError.style.display = "none"; });
+  queryError.append(queryErrorText, queryErrorClose);
+  const showQueryError = () => {
+    const err = model.get("query_error");
+    queryErrorText.textContent = err ? String(err) : "";
+    queryError.style.display = err ? "flex" : "none";
+    queryInput.classList.toggle("avs-query-input-error", Boolean(err));
+  };
+  model.on("change:query_error", showQueryError);
+  showQueryError();
+  toolbar.appendChild(queryError);
+
   // Model change listeners
   model.on("change:connection_status", () => {
     updateStatusDot(statusDot, model.get("connection_status"));

@@ -62,21 +62,9 @@ var COLOR_SCALES = {
 function colorScale(name) {
   return Object.hasOwn(COLOR_SCALES, name) ? COLOR_SCALES[name] : COLOR_SCALES.viridis;
 }
-var CATEGORICAL_COLORS = [
-  "#6366f1",
-  "#f59e0b",
-  "#10b981",
-  "#ef4444",
-  "#8b5cf6",
-  "#06b6d4",
-  "#f97316",
-  "#84cc16",
-  "#ec4899",
-  "#14b8a6"
-];
 
 // theme.ts
-var THEME_BACKGROUNDS = { dark: "#181c1a", light: "#ffffff" };
+var THEME_BACKGROUNDS = { dark: "#161a19", light: "#ffffff" };
 var THEME_WRITES = /* @__PURE__ */ Symbol.for("anywidget.theme-writes");
 var themeWrites = globalThis;
 function writingTheme() {
@@ -189,6 +177,112 @@ var ICONS = {
   lasso: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="10" rx="9" ry="7"/><path d="M12 17v3M12 20l-2 2"/></svg>'
 };
 
+// palette.ts
+var LIGHT = {
+  data: ["#5c93d9", "#be6133", "#008f6d", "#8a6000", "#cd7498", "#3c802c", "#6a5cab", "#b7615b"],
+  other: "#8a918d",
+  background: "#ffffff",
+  edge: "#b9c3be"
+};
+var DARK = {
+  data: ["#4076b9", "#ac5428", "#008665", "#8f6900", "#b65b81", "#3c7d2d", "#7161b4", "#b6605a"],
+  other: "#676f6b",
+  background: "#161a19",
+  edge: "#46504b"
+};
+
+// registry.ts
+var SLOTS = 8;
+var CategoryRegistry = class {
+  slots = /* @__PURE__ */ new Map();
+  other = /* @__PURE__ */ new Set();
+  next = 0;
+  /** Give the largest new categories the free slots, in descending count (ties by name); the rest become Other. */
+  assign(counts) {
+    const fresh = [...counts.entries()].filter(([category]) => !this.slots.has(category) && !this.other.has(category)).sort(([a, ca], [b, cb]) => cb - ca || (a < b ? -1 : a > b ? 1 : 0));
+    for (const [category] of fresh) {
+      if (this.next < SLOTS) this.slots.set(category, this.next++);
+      else this.other.add(category);
+    }
+  }
+  /** The category's slot (0 to 7), or null for Other and for a category never assigned. */
+  slot(category) {
+    return this.slots.get(category) ?? null;
+  }
+  /** The category's colour in a theme: its slot's data colour, else Other. */
+  colorFor(category, palette) {
+    const slot = this.slot(category);
+    return slot === null ? palette.other : palette.data[slot];
+  }
+};
+function countBy(items, key) {
+  const counts = /* @__PURE__ */ new Map();
+  for (const item of items) {
+    const k = key(item);
+    if (k !== void 0) counts.set(k, (counts.get(k) ?? 0) + 1);
+  }
+  return counts;
+}
+function parsed(color) {
+  const c = color.trim();
+  const hex = /^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i.exec(c)?.[1];
+  if (hex) {
+    const full = hex.length === 3 ? hex.split("").map((d) => d + d).join("") : hex.slice(0, 6);
+    return [0, 2, 4].map((i) => parseInt(full.slice(i, i + 2), 16));
+  }
+  const rgb = /^rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)/i.exec(c);
+  return rgb ? rgb.slice(1, 4).map((v) => Math.round(Math.min(255, Number(v)))) : null;
+}
+var RESOLVED = /* @__PURE__ */ new Map();
+function channels(color) {
+  const direct = parsed(color);
+  if (direct || typeof document === "undefined") return direct;
+  if (!RESOLVED.has(color)) {
+    const ctx = document.createElement("canvas").getContext("2d");
+    let rgb = null;
+    if (ctx) {
+      ctx.fillStyle = "#000000";
+      ctx.fillStyle = color;
+      rgb = parsed(String(ctx.fillStyle));
+    }
+    RESOLVED.set(color, rgb);
+  }
+  return RESOLVED.get(color) ?? null;
+}
+function mixOver(color, background, alpha) {
+  const c = channels(color);
+  const b = channels(background);
+  if (!c || !b) return color;
+  return "#" + c.map((v, i) => Math.round(alpha * v + (1 - alpha) * b[i]).toString(16).padStart(2, "0")).join("");
+}
+
+// colors.ts
+var REGISTRIES = /* @__PURE__ */ new WeakMap();
+function categoryRegistry(model, field) {
+  let byField = REGISTRIES.get(model);
+  if (!byField) REGISTRIES.set(model, byField = /* @__PURE__ */ new Map());
+  let registry = byField.get(field);
+  if (!registry) byField.set(field, registry = new CategoryRegistry());
+  return registry;
+}
+function paletteFor(model) {
+  return model.get("dark_mode") ? DARK : LIGHT;
+}
+function categoricalCounts(points, field) {
+  return countBy(points, (p) => {
+    const v = p[field];
+    return v === void 0 || v === null || typeof v === "number" ? void 0 : String(v);
+  });
+}
+var OTHER_RECEDE = 0.7;
+function otherInk(palette) {
+  return mixOver(palette.other, palette.background, OTHER_RECEDE);
+}
+function categoryColor(value, registry, palette) {
+  const slot = value === void 0 || value === null || !registry ? null : registry.slot(String(value));
+  return slot === null ? otherInk(palette) : palette.data[slot];
+}
+
 // sidebar.ts
 function createSidebar(model, callbacks) {
   const panel = document.createElement("div");
@@ -243,6 +337,7 @@ function createSidebar(model, callbacks) {
     if (name) {
       const item = document.createElement("div");
       item.className = "avs-collection-item avs-active";
+      item.setAttribute("aria-pressed", "true");
       item.textContent = name;
       collectionsList.appendChild(item);
     } else {
@@ -303,6 +398,10 @@ function createSidebar(model, callbacks) {
       groups[val] = (groups[val] || 0) + 1;
     });
     const sorted = Object.entries(groups).sort((a, b) => b[1] - a[1]);
+    const registry = categoryRegistry(model, colorField);
+    registry.assign(categoricalCounts(points, colorField));
+    const palette = paletteFor(model);
+    const numeric = points.some((p) => typeof p[colorField] === "number");
     if (sorted.length === 0) {
       clusterContent.innerHTML = '<div class="avs-note">No clusters found</div>';
       return;
@@ -311,6 +410,15 @@ function createSidebar(model, callbacks) {
       const row = document.createElement("div");
       row.className = "avs-property-row avs-clickable";
       row.innerHTML = '<span class="avs-property-key">' + escapeHtml(String(key)) + '</span><span class="avs-property-value">' + count + "</span>";
+      if (!numeric) {
+        const slot = registry.slot(key);
+        const swatch = document.createElement("span");
+        swatch.className = "avs-swatch";
+        swatch.dataset.color = slot === null ? palette.other : palette.data[slot];
+        swatch.style.background = swatch.dataset.color;
+        swatch.title = slot === null ? "Other: beyond the 8 largest clusters" : `Colour ${slot + 1} of 8`;
+        row.prepend(swatch);
+      }
       row.addEventListener("click", () => {
         const ids = points.filter((p) => String(p[colorField] ?? "unknown") === String(key)).map((p) => p.id).filter(Boolean);
         model.set("selected_points", ids);
@@ -415,6 +523,7 @@ function createSidebar(model, callbacks) {
     updateClusters();
   });
   model.on("change:color_field", updateClusters);
+  model.on("change:dark_mode", updateClusters);
   model.on("change:backend_config", updateCollections);
   model.on("change:backend", updateCollections);
   model.on("change:selected_points", updateDistanceInfo);
@@ -518,6 +627,28 @@ function createToolbar(model, callbacks) {
   propsBtn.title = "Properties";
   propsBtn.addEventListener("click", () => callbacks.onToggleProperties?.());
   toolbar.appendChild(propsBtn);
+  const queryError = document.createElement("div");
+  queryError.className = "avs-query-error";
+  queryError.setAttribute("role", "alert");
+  const queryErrorText = document.createElement("span");
+  queryErrorText.className = "avs-query-error-text";
+  const queryErrorClose = document.createElement("button");
+  queryErrorClose.className = "avs-btn avs-btn-sm";
+  queryErrorClose.innerHTML = ICONS.close;
+  queryErrorClose.title = "Dismiss";
+  queryErrorClose.addEventListener("click", () => {
+    queryError.style.display = "none";
+  });
+  queryError.append(queryErrorText, queryErrorClose);
+  const showQueryError = () => {
+    const err = model.get("query_error");
+    queryErrorText.textContent = err ? String(err) : "";
+    queryError.style.display = err ? "flex" : "none";
+    queryInput.classList.toggle("avs-query-input-error", Boolean(err));
+  };
+  model.on("change:query_error", showQueryError);
+  showQueryError();
+  toolbar.appendChild(queryError);
   model.on("change:connection_status", () => {
     updateStatusDot(statusDot, model.get("connection_status"));
   });
@@ -1000,10 +1131,104 @@ function formatValue(val) {
   if (typeof val === "object") return JSON.stringify(val).slice(0, 50);
   return String(val).slice(0, 50);
 }
+function propertiesForSelection(selected, showProperties) {
+  if (!showProperties) return null;
+  return selected.length > 0 ? "open" : "close";
+}
+
+// size.ts
+var MIN_HEIGHT = 360;
+function wrapperSize(width, height) {
+  const w = width > 0 ? `${width}px` : "100%";
+  if (height > 0) return { width: w, height: `${height}px` };
+  return { width: w, aspectRatio: "16 / 10", minHeight: `${MIN_HEIGHT}px`, maxHeight: "80vh" };
+}
+
+// states.ts
+var EMPTY_NOTE = "Nothing to show yet. Pass points from Python, or run a query.";
+function canvasNote(model) {
+  if (model.get("query_error")) return "";
+  return (model.get("points") ?? []).length > 0 ? "" : EMPTY_NOTE;
+}
+function mountCanvasNote(container, model) {
+  const note = document.createElement("div");
+  note.className = "avs-canvas-note";
+  note.setAttribute("role", "status");
+  const update = () => {
+    const text = canvasNote(model);
+    note.textContent = text;
+    note.style.display = text ? "" : "none";
+  };
+  model.on("change:points", update);
+  model.on("change:query_error", update);
+  update();
+  container.appendChild(note);
+}
 
 // vendor-globals.ts
 var THREE = anywidgetVectorVendor.THREE;
 var OrbitControls = anywidgetVectorVendor.OrbitControls;
+
+// frame.ts
+function fitDistance(points, center, fovDeg, aspect) {
+  let radius = 0;
+  for (const p of points) radius = Math.max(radius, Math.hypot(p.x - center.x, p.y - center.y, p.z - center.z));
+  const halfV = fovDeg * Math.PI / 360;
+  const half = aspect < 1 ? Math.atan(Math.tan(halfV) * aspect) : halfV;
+  return radius / Math.sin(half) * 1.08;
+}
+function boxCenter(points) {
+  const lo = { x: Infinity, y: Infinity, z: Infinity }, hi = { x: -Infinity, y: -Infinity, z: -Infinity };
+  for (const p of points) {
+    lo.x = Math.min(lo.x, p.x);
+    lo.y = Math.min(lo.y, p.y);
+    lo.z = Math.min(lo.z, p.z);
+    hi.x = Math.max(hi.x, p.x);
+    hi.y = Math.max(hi.y, p.y);
+    hi.z = Math.max(hi.z, p.z);
+  }
+  return { x: (lo.x + hi.x) / 2, y: (lo.y + hi.y) / 2, z: (lo.z + hi.z) / 2 };
+}
+function selectionDistance(selected, all, fovDeg, aspect) {
+  const own = fitDistance(selected, boxCenter(selected), fovDeg, aspect);
+  const whole = fitDistance(all, boxCenter(all), fovDeg, aspect);
+  return Math.max(own, whole * 0.25);
+}
+
+// ink.ts
+var INK_FILL = 0.38;
+var INK_SHADE = 0.35;
+var RIM_FROM = 0.55;
+var RIM_TO = 0.8;
+var ANCHORS = ["#include <common>", "#include <color_fragment>", "#include <opaque_fragment>"];
+function inkFragment(fragment) {
+  for (const anchor of ANCHORS) {
+    if (!fragment.includes(anchor)) throw new Error(`ink.ts: the shader has no ${anchor} to hook into`);
+  }
+  return fragment.replace(
+    "#include <common>",
+    "#include <common>\nuniform vec3 uInkBackground;\nuniform float uInkFill;\nuniform float uInkShade;\nvec3 inkMix(vec3 a, vec3 b, float t) { return pow(mix(pow(a, vec3(1.0 / 2.2)), pow(b, vec3(1.0 / 2.2)), t), vec3(2.2)); }"
+  ).replace(
+    "#include <color_fragment>",
+    "#include <color_fragment>\n	vec3 inkColor = diffuseColor.rgb;\n	vec3 inkFill = inkMix(uInkBackground, inkColor, uInkFill);\n	diffuseColor.rgb = inkFill;"
+  ).replace(
+    "#include <opaque_fragment>",
+    `#include <opaque_fragment>
+	gl_FragColor.rgb = mix(inkFill, gl_FragColor.rgb, uInkShade);
+	float inkRim = 1.0 - abs(dot(normalize(normal), normalize(vViewPosition)));
+	gl_FragColor.rgb = mix(gl_FragColor.rgb, inkColor, smoothstep(${RIM_FROM.toFixed(2)}, ${RIM_TO.toFixed(2)}, inkRim));`
+  );
+}
+function applyInk(target, background) {
+  const material = target;
+  material.onBeforeCompile = (shader) => {
+    shader.uniforms.uInkBackground = background;
+    shader.uniforms.uInkFill = { value: INK_FILL };
+    shader.uniforms.uInkShade = { value: INK_SHADE };
+    shader.fragmentShader = inkFragment(shader.fragmentShader);
+  };
+  material.customProgramCacheKey = () => "anywidgets-ink";
+}
 
 // canvas.ts
 var mesh = (o) => o;
@@ -1042,6 +1267,7 @@ var DISTANCE_METRICS = {
 };
 function createCanvas(model, container, callbacks) {
   let scene;
+  const inkBackground = { value: new THREE.Color(model.get("background")) };
   let camera;
   let renderer;
   let controls;
@@ -1154,16 +1380,22 @@ function createCanvas(model, container, callbacks) {
       scene.remove(gridHelper);
       gridHelper = null;
     }
+    const pal = paletteFor(model);
+    const bg = String(model.get("background") || "");
+    const base = /^#[0-9a-f]{6}$/i.test(bg) ? bg : pal.background;
     if (model.get("show_axes")) {
-      const axes = new THREE.AxesHelper(1.2);
-      axesGroup.add(axes);
+      const axisMaterial = new THREE.LineBasicMaterial({ color: pal.edge });
+      for (const end of [[1.2, 0, 0], [0, 1.2, 0], [0, 0, 1.2]]) {
+        const geometry = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), new THREE.Vector3(end[0], end[1], end[2])]);
+        axesGroup.add(new THREE.Line(geometry, axisMaterial));
+      }
       const labels = model.get("axis_labels") || { x: "X", y: "Y", z: "Z" };
-      addAxisLabel(labels.x, [1.3, 0, 0], 16729156);
-      addAxisLabel(labels.y, [0, 1.3, 0], 4521796);
-      addAxisLabel(labels.z, [0, 0, 1.3], 4474111);
+      addAxisLabel(labels.x, [1.32, 0, 0], pal.other);
+      addAxisLabel(labels.y, [0, 1.32, 0], pal.other);
+      addAxisLabel(labels.z, [0, 0, 1.32], pal.other);
     }
     if (model.get("show_grid")) {
-      gridHelper = new THREE.GridHelper(2, model.get("grid_divisions") || 10, 4473924, 3355443);
+      gridHelper = new THREE.GridHelper(2, model.get("grid_divisions") || 10, mixOver(pal.edge, base, 0.7), mixOver(pal.edge, base, 0.4));
       scene.add(gridHelper);
     }
   }
@@ -1171,16 +1403,17 @@ function createCanvas(model, container, callbacks) {
     const canvas = document.createElement("canvas");
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-    canvas.width = 64;
+    canvas.width = 128;
     canvas.height = 32;
-    ctx.font = "bold 24px Arial";
-    ctx.fillStyle = "#" + color.toString(16).padStart(6, "0");
+    ctx.font = '500 22px "JetBrains Mono", ui-monospace, monospace';
+    ctx.fillStyle = color;
     ctx.textAlign = "center";
-    ctx.fillText(text, 32, 24);
+    ctx.textBaseline = "middle";
+    ctx.fillText(text, 64, 16);
     const texture = new THREE.CanvasTexture(canvas);
-    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture }));
+    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, depthTest: false }));
     sprite.position.set(position[0], position[1], position[2]);
-    sprite.scale.set(0.25, 0.125, 1);
+    sprite.scale.set(0.26, 0.065, 1);
     axesGroup.add(sprite);
   }
   function createPoints() {
@@ -1195,7 +1428,7 @@ function createCanvas(model, container, callbacks) {
     const box = new THREE.Box3();
     points.forEach((p) => box.expandByPoint(new THREE.Vector3(p.x ?? 0, p.y ?? 0, p.z ?? 0)));
     const dataSize = box.getSize(new THREE.Vector3()).length() || 1;
-    const scaleFactor = dataSize / 10;
+    const scaleFactor = dataSize / 6;
     const rawRange = model.get("size_range") || [0.02, 0.06];
     const sizeRange = [rawRange[0] * scaleFactor, rawRange[1] * scaleFactor];
     const opts = {
@@ -1205,8 +1438,14 @@ function createCanvas(model, container, callbacks) {
       sizeField: model.get("size_field"),
       sizeRange,
       shapeField: model.get("shape_field"),
-      shapeMap: model.get("shape_map") || {}
+      shapeMap: model.get("shape_map") || {},
+      palette: paletteFor(model),
+      registry: null
     };
+    if (opts.colorField) {
+      opts.registry = categoryRegistry(model, opts.colorField);
+      opts.registry.assign(categoricalCounts(points, opts.colorField));
+    }
     if (opts.colorField && !opts.colorDomain) {
       const values = points.map((p) => p[opts.colorField]).filter((v) => typeof v === "number");
       if (values.length > 0) opts.colorDomain = [Math.min(...values), Math.max(...values)];
@@ -1239,6 +1478,7 @@ function createCanvas(model, container, callbacks) {
       const geometry = SHAPE_GEOMETRIES[shape]();
       const color = getPointColor(point, opts);
       const material = new THREE.MeshPhongMaterial({ color });
+      applyInk(material, inkBackground);
       const mesh2 = new THREE.Mesh(geometry, material);
       const size = getPointSize(point, opts);
       mesh2.scale.set(size, size, size);
@@ -1257,6 +1497,7 @@ function createCanvas(model, container, callbacks) {
     for (const [shape, items] of Object.entries(groups)) {
       const geometry = SHAPE_GEOMETRIES[shape]();
       const material = new THREE.MeshPhongMaterial({ vertexColors: false });
+      applyInk(material, inkBackground);
       const instancedMesh = new THREE.InstancedMesh(geometry, material, items.length);
       const matrix = new THREE.Matrix4();
       const colors = new Float32Array(items.length * 3);
@@ -1432,10 +1673,9 @@ function createCanvas(model, container, callbacks) {
     const box = new THREE.Box3();
     points.forEach((p) => box.expandByPoint(new THREE.Vector3(p.x ?? 0, p.y ?? 0, p.z ?? 0)));
     const center = box.getCenter(new THREE.Vector3());
-    const size = box.getSize(new THREE.Vector3()).length();
-    const distance = size / (2 * Math.tan(Math.PI * camera.fov / 360));
+    const distance = fitDistance(points.map((p) => ({ x: p.x ?? 0, y: p.y ?? 0, z: p.z ?? 0 })), center, camera.fov, camera.aspect) || 2;
     controls.target.copy(center);
-    camera.position.copy(center.clone().add(new THREE.Vector3(0, 0, distance * 0.55)));
+    camera.position.copy(center.clone().add(new THREE.Vector3(0.6, 0.5, 0.8).normalize().multiplyScalar(distance)));
     camera.near = Math.max(0.01, distance * 1e-3);
     camera.far = Math.max(1e3, distance * 10);
     camera.updateProjectionMatrix();
@@ -1484,9 +1724,10 @@ function createCanvas(model, container, callbacks) {
       currentMode = mode;
       model.set("selection_mode", mode);
       model.save_changes();
-      clickBtn.classList.toggle("avs-mode-active", mode === "click");
-      boxBtn.classList.toggle("avs-mode-active", mode === "box");
-      lassoBtn.classList.toggle("avs-mode-active", mode === "lasso");
+      for (const [btn, on] of [[clickBtn, mode === "click"], [boxBtn, mode === "box"], [lassoBtn, mode === "lasso"]]) {
+        btn.classList.toggle("avs-mode-active", on);
+        btn.setAttribute("aria-pressed", String(on));
+      }
       controls.enabled = mode === "click";
       if (boxOverlay) boxOverlay.style.display = mode === "box" ? "block" : "none";
       if (lassoOverlayEl) lassoOverlayEl.style.display = mode === "lasso" ? "block" : "none";
@@ -1501,10 +1742,10 @@ function createCanvas(model, container, callbacks) {
     modeGroup.appendChild(clickBtn);
     modeGroup.appendChild(boxBtn);
     modeGroup.appendChild(lassoBtn);
-    zoomControls.appendChild(modeGroup);
-    zoomControls.appendChild(zoomInBtn);
-    zoomControls.appendChild(zoomOutBtn);
-    zoomControls.appendChild(zoomFitBtn);
+    const zoomGroup = document.createElement("div");
+    zoomGroup.className = "avs-zoom-group";
+    zoomGroup.append(zoomInBtn, zoomOutBtn, zoomFitBtn);
+    zoomControls.append(modeGroup, zoomGroup);
     container.appendChild(zoomControls);
   }
   function setupBoxSelection() {
@@ -1617,6 +1858,13 @@ function createCanvas(model, container, callbacks) {
     });
     model.on("change:background", () => {
       scene.background = new THREE.Color(model.get("background"));
+      inkBackground.value.set(model.get("background"));
+      setupAxesAndGrid();
+    });
+    model.on("change:dark_mode", () => {
+      createPoints();
+      setupAxesAndGrid();
+      updateSelectionHighlight();
     });
     model.on("change:show_axes", setupAxesAndGrid);
     model.on("change:show_grid", setupAxesAndGrid);
@@ -1764,8 +2012,8 @@ function createCanvas(model, container, callbacks) {
     lassoSvg.style.cssText = "position:absolute;top:0;left:0;width:100%;height:100%;z-index:16;display:none;pointer-events:none;";
     container.appendChild(lassoSvg);
     lassoPathEl = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
-    lassoPathEl.setAttribute("fill", "rgba(99, 102, 241, 0.1)");
-    lassoPathEl.setAttribute("stroke", "#6366f1");
+    lassoPathEl.style.fill = "color-mix(in srgb, var(--avs-ring) 10%, transparent)";
+    lassoPathEl.style.stroke = "var(--avs-ring)";
     lassoPathEl.setAttribute("stroke-width", "2");
     lassoPathEl.setAttribute("stroke-dasharray", "4 2");
     lassoSvg.appendChild(lassoPathEl);
@@ -1880,10 +2128,10 @@ function createCanvas(model, container, callbacks) {
       const box = new THREE.Box3();
       selectedPoints.forEach((p) => box.expandByPoint(new THREE.Vector3(p.x ?? 0, p.y ?? 0, p.z ?? 0)));
       const center = box.getCenter(new THREE.Vector3());
-      const size = box.getSize(new THREE.Vector3()).length() || 0.1;
-      const distance = size / (2 * Math.tan(Math.PI * camera.fov / 360));
+      const at = (p) => ({ x: p.x ?? 0, y: p.y ?? 0, z: p.z ?? 0 });
+      const distance = selectionDistance(selectedPoints.map(at), points.map(at), camera.fov, camera.aspect) || 1;
       controls.target.copy(center);
-      camera.position.copy(center.clone().add(new THREE.Vector3(0, 0, distance * 0.55)));
+      camera.position.copy(center.clone().add(new THREE.Vector3(0.6, 0.5, 0.8).normalize().multiplyScalar(distance)));
       camera.near = Math.max(0.01, distance * 1e-3);
       camera.far = Math.max(1e3, distance * 10);
       camera.updateProjectionMatrix();
@@ -1901,14 +2149,22 @@ function pointMatchesFilter(point, filter) {
 }
 function getPointColor(point, opts) {
   if (point.color) return new THREE.Color(point.color);
-  if (opts.colorField && point[opts.colorField] !== void 0) {
+  if (opts.colorField) {
     const value = point[opts.colorField];
     if (typeof value === "number") {
       return getColorFromScale(value, opts.colorScale, opts.colorDomain);
     }
-    return getCategoricalColor(value);
+    return new THREE.Color(categoryColor(value, opts.registry, opts.palette));
   }
-  return new THREE.Color(6514417);
+  return new THREE.Color(opts.palette.data[0]);
+}
+function hashString(str) {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = (hash << 5) - hash + str.charCodeAt(i);
+    hash |= 0;
+  }
+  return Math.abs(hash);
 }
 function getPointSize(point, opts) {
   if (point.size !== void 0) return point.size;
@@ -1938,53 +2194,41 @@ function getColorFromScale(value, scaleName, domain) {
     c1[2] + f * (c2[2] - c1[2])
   );
 }
-function hashString(str) {
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    hash = (hash << 5) - hash + str.charCodeAt(i);
-    hash |= 0;
-  }
-  return Math.abs(hash);
-}
-function getCategoricalColor(value) {
-  const idx = hashString(String(value)) % CATEGORICAL_COLORS.length;
-  return new THREE.Color(CATEGORICAL_COLORS[idx]);
-}
 
 // ../backends/qdrant/client.ts
 async function executeQuery(query, config) {
   const { url, apiKey, collection } = config;
   const headers = { "Content-Type": "application/json" };
   if (apiKey) headers["api-key"] = apiKey;
-  const parsed = typeof query === "string" ? JSON.parse(query) : query;
+  const parsed2 = typeof query === "string" ? JSON.parse(query) : query;
   let endpoint, body;
-  if (parsed.ids) {
+  if (parsed2.ids) {
     endpoint = `${url}/collections/${collection}/points`;
-    body = { ids: parsed.ids, with_payload: true, with_vectors: true };
-  } else if (parsed.recommend) {
+    body = { ids: parsed2.ids, with_payload: true, with_vectors: true };
+  } else if (parsed2.recommend) {
     endpoint = `${url}/collections/${collection}/points/recommend`;
     body = {
-      positive: parsed.recommend.positive || [],
-      negative: parsed.recommend.negative || [],
-      limit: parsed.limit || 10,
+      positive: parsed2.recommend.positive || [],
+      negative: parsed2.recommend.negative || [],
+      limit: parsed2.limit || 10,
       with_payload: true,
       with_vectors: true
     };
-  } else if (parsed.vector) {
+  } else if (parsed2.vector) {
     endpoint = `${url}/collections/${collection}/points/search`;
     body = {
-      vector: parsed.vector,
-      filter: parsed.filter,
-      limit: parsed.limit || 10,
+      vector: parsed2.vector,
+      filter: parsed2.filter,
+      limit: parsed2.limit || 10,
       with_payload: true,
       with_vectors: true,
-      score_threshold: parsed.score_threshold
+      score_threshold: parsed2.score_threshold
     };
-  } else if (parsed.filter) {
+  } else if (parsed2.filter) {
     endpoint = `${url}/collections/${collection}/points/scroll`;
     body = {
-      filter: parsed.filter,
-      limit: parsed.limit || 100,
+      filter: parsed2.filter,
+      limit: parsed2.limit || 100,
       with_payload: true,
       with_vectors: true
     };
@@ -2012,11 +2256,11 @@ function toPoints(response) {
 async function executeQuery2(query, config) {
   const { url, apiKey, namespace } = config;
   const headers = { "Content-Type": "application/json", "Api-Key": apiKey };
-  const parsed = typeof query === "string" ? JSON.parse(query) : query;
-  if (parsed.ids) {
+  const parsed2 = typeof query === "string" ? JSON.parse(query) : query;
+  if (parsed2.ids) {
     const params = new URLSearchParams();
-    for (const id of parsed.ids) params.append("ids", String(id));
-    const ns = parsed.namespace || namespace;
+    for (const id of parsed2.ids) params.append("ids", String(id));
+    const ns = parsed2.namespace || namespace;
     if (ns) params.set("namespace", ns);
     const resp2 = await fetch(`${url}/vectors/fetch?${params}`, {
       method: "GET",
@@ -2026,12 +2270,12 @@ async function executeQuery2(query, config) {
     return await resp2.json();
   }
   const body = {
-    vector: parsed.vector,
-    topK: parsed.topK || parsed.limit || 10,
+    vector: parsed2.vector,
+    topK: parsed2.topK || parsed2.limit || 10,
     includeMetadata: true,
     includeValues: true,
-    filter: parsed.filter,
-    namespace: parsed.namespace || namespace
+    filter: parsed2.filter,
+    namespace: parsed2.namespace || namespace
   };
   const resp = await fetch(`${url}/query`, { method: "POST", headers, body: JSON.stringify(body) });
   if (!resp.ok) throw new Error(`Pinecone error: ${await resp.text()}`);
@@ -2319,14 +2563,7 @@ function render({ model: widgetModel, el }) {
   const model = trackModelListeners(widgetModel);
   const wrapper = document.createElement("div");
   wrapper.className = "avs-wrapper";
-  const _w = model.get("width");
-  const _h = model.get("height");
-  wrapper.style.width = _w > 0 ? _w + "px" : "100%";
-  if (_h > 0) {
-    wrapper.style.height = _h + "px";
-  } else {
-    wrapper.style.aspectRatio = "1 / 1";
-  }
+  Object.assign(wrapper.style, wrapperSize(model.get("width") || 0, model.get("height") || 0));
   el.appendChild(wrapper);
   const stopFollowingTheme = followHostTheme(model, el, (dark) => wrapper.classList.toggle("avs-dark", dark));
   let sidebar;
@@ -2366,6 +2603,7 @@ function render({ model: widgetModel, el }) {
   canvasContainer.style.width = "100%";
   canvasContainer.style.height = "100%";
   main.appendChild(canvasContainer);
+  mountCanvasNote(canvasContainer, model);
   if (model.get("show_settings")) {
     settingsPanel = createSettingsPanel(model, {
       onClose: () => settingsPanel?.close()
@@ -2376,7 +2614,17 @@ function render({ model: widgetModel, el }) {
     onClose: () => propertiesPanel?.close()
   });
   main.appendChild(propertiesPanel.element);
-  if (model.get("show_properties")) propertiesPanel.open();
+  const followSelection = () => {
+    const action = propertiesForSelection(model.get("selected_points") || [], Boolean(model.get("show_properties")));
+    if (action === "open" && !propertiesPanel.isOpen()) {
+      settingsPanel?.close();
+      propertiesPanel.open();
+    } else if (action === "close") {
+      propertiesPanel.close();
+    }
+  };
+  model.on("change:selected_points", followSelection);
+  followSelection();
   let canvas;
   try {
     canvas = createCanvas(model, canvasContainer, {

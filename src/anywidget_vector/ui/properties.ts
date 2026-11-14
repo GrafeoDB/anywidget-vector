@@ -159,3 +159,12 @@ function formatValue(val: unknown): string {
   if (typeof val === "object") return JSON.stringify(val).slice(0, 50);
   return String(val).slice(0, 50);
 }
+
+/**
+ * What the Properties panel does when the selection changes: it opens on a selection and closes when it clears;
+ * null when the host turned the panel off (show_properties false).
+ */
+export function propertiesForSelection(selected: unknown[], showProperties: boolean): "open" | "close" | null {
+  if (!showProperties) return null;
+  return selected.length > 0 ? "open" : "close";
+}

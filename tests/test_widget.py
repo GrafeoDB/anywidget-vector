@@ -548,6 +548,11 @@ class TestToHtml:
         assert '"color_field": "cluster"' in html or '"color_field":"cluster"' in html
         assert '"show_axes": false' in html or '"show_axes":false' in html
 
+    def test_to_html_tells_the_page_its_theme(self):
+        """The page picks the data colours of the widget's theme (light or dark palette)."""
+        assert '"dark_mode": true' in VectorSpace(points=[], dark_mode=True).to_html()
+        assert '"dark_mode": false' in VectorSpace(points=[], dark_mode=False).to_html()
+
     def test_to_html_custom_title(self):
         """Custom title, width, height appear in the output."""
         widget = VectorSpace(points=[])
