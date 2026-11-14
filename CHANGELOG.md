@@ -9,19 +9,19 @@ Shared look release: the widget takes the look of the anywidgets family (graphit
 - **Cluster swatches**: the explorer's cluster list shows each cluster's colour; clusters beyond the eight largest are marked "Other".
 - **Query errors in view**: a failed query shows its message in a banner under the toolbar (before, only inside Settings).
 - **Empty state**: an empty widget shows "Nothing to show yet. Pass points from Python, or run a query."
-- **Keyboard focus**: buttons, menus and checkboxes show a focus ring, and the dark mode switch can be reached with the keyboard.
+- **Keyboard focus**: buttons, menus, checkboxes and the explorer's cluster rows show a focus ring, and the dark mode switch can be reached with the keyboard. A cluster row selects its points with Enter or Space.
 
 ### Changed
 
 - **Default look**: the chrome is green-tinted graphite with hairline borders, labels and values use JetBrains Mono (falling back to `ui-monospace`), and the tooltip follows the theme instead of black. Controls take the new `--avs-radius-control` (5px); `--avs-radius` stays and now sets the frame (3px, `--avs-radius-box`).
-- **Data palette**: `color_field` categories take eight colours in a fixed order, given to the eight largest by count; the rest are "Other" and recede towards the background. A category keeps its colour while the widget is shown, and `to_html()` pages use the light or dark palette of the widget.
-- **Ink points**: a point's body is its colour at 38% over the background and its silhouette the full colour; shapes, `shape_field` and `shape_map` are unchanged.
-- **Camera**: the view opens framed on the whole cloud from an angle (before, the camera started inside it), also in `to_html()` pages; selected points are framed the same way, never closer than a quarter of the whole view.
+- **Data palette**: `color_field` categories take eight colours in a fixed order, given to the eight largest by count; the rest are "Other" and recede towards the background. A category keeps its colour while the shown points have it; points with none of the coloured categories (another query) get the eight colours afresh, and `to_html()` pages use the light or dark palette of the widget.
+- **Ink points**: a point's body is its colour at 38% over the background and its silhouette the full colour, also in `to_html()` pages; shapes, `shape_field` and `shape_map` are unchanged.
+- **Camera**: the view opens framed on the whole cloud from an angle (before, the camera started inside it), also in `to_html()` pages and when points arrive in an empty view. Selected points are framed the same way, never closer than a quarter of the whole view.
 - **Point size**: points are drawn 1.67 times larger for the same `size_range`, to suit the framed view.
 - **Size**: with `height` 0 (the default) the widget is 16:10 of its width, at least 360px and at most 80% of the screen high (was as tall as wide).
-- **Axes and grid**: grey axes with mono letters and a faint hairline grid replace the red, green and blue axes; switching the theme recolours the points, axes and grid.
+- **Axes and grid**: grey axes with mono letters and a faint hairline grid replace the red, green and blue axes, also in `to_html()` pages, whose tooltip follows the theme too. Switching the theme recolours the points, axes and grid and keeps the camera, the selection and the toolbar filter.
 - **Canvas controls**: the selection modes and zoom buttons are one floating card at the bottom right, as in anywidget-graph. Under 480px wide the card leaves out zoom in and out (pinch or the mouse wheel still zooms).
-- **Properties panel**: opens when points are selected and closes when the selection clears, instead of opening empty on load; `show_properties=False` still keeps it out.
+- **Properties panel**: opens when points are selected and closes when the selection clears, instead of opening empty on load; a selection set before the widget is shown opens it on that point's details. `show_properties=False` still keeps it out.
 - **Toggles look pressed**: the active selection mode and the chosen collection look pressed instead of filled, so only Run is a filled button.
 - **Settings**: each field sits under its label at full width.
 
@@ -29,6 +29,9 @@ Shared look release: the widget takes the look of the anywidgets family (graphit
 
 - **Run button in dark mode**: its play icon was white on the near-white button; it now uses the dark text colour.
 - **Browser controls follow the widget's theme**: scrollbars, checkboxes and menus are drawn in the widget's light or dark theme instead of the page's.
+- **Pinch zooms on touch screens**: a two-finger pinch on the canvas did nothing; it now zooms, as the mouse wheel does.
+- **A selection mode given in Python shows**: `selection_mode="box"` or `"lasso"` in the constructor now presses its button and turns on its overlay; before, Click looked active and box or lasso selection did nothing until a mode button was clicked. `"multi"` keeps the camera controls.
+- **Background colours in any CSS form**: a `background` such as `#fff`, `rgb(...)` or `white` now tints the grid (before, only six-digit hex did). A colour the browser cannot read stays a solid fill instead of being mixed as black, and a malformed `rgb()` is no longer read as a colour.
 
 ## [0.4.1] - 2026-11-12
 

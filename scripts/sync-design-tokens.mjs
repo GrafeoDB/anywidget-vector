@@ -48,6 +48,13 @@ const MAP = {
 
 const tokens = JSON.parse(readFileSync(source, "utf8"));
 
+// palette.ts needs these of each theme; check before writing anything, so a short tokens file changes nothing
+for (const mode of ["light", "dark"]) {
+  for (const token of ["data-1", "data-2", "data-3", "data-4", "data-5", "data-6", "data-7", "data-8", "input", "background", "edge"]) {
+    if (!(token in (tokens[mode] ?? {}))) throw new Error(`design token "${token}" missing in ${mode}`);
+  }
+}
+
 function block(selector, mode) {
   const t = tokens[mode];
   const lines = Object.entries(MAP).map(([name, token]) => {
@@ -66,8 +73,10 @@ ${block(`.${PREFIX}-wrapper.${PREFIX}-dark`, "dark")}
 
 const cssPath = path.join(ui, "styles.css");
 const css = readFileSync(cssPath, "utf8");
-if (!css.includes("design-tokens:start")) throw new Error("design-tokens markers not found in styles.css");
-writeFileSync(cssPath, css.replace(/\/\* design-tokens:start[\s\S]*?\/\* design-tokens:end \*\//, generated));
+// Both markers must be there: with only the start one, the replace would change nothing and still report success
+const synced = css.match(/\/\* design-tokens:start[\s\S]*?\/\* design-tokens:end \*\//);
+if (!synced) throw new Error("design-tokens:start and design-tokens:end markers not found in styles.css");
+writeFileSync(cssPath, css.replace(synced[0], () => generated));
 
 function palette(mode) {
   const t = tokens[mode];

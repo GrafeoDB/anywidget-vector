@@ -36,6 +36,18 @@ def get_css() -> str:
     return _read_file(_UI_DIR / "styles.css")
 
 
+def get_theme_css() -> str:
+    """The widget's colour, type and shape variables: the block of ``styles.css`` between the design-tokens markers
+    (written by ``scripts/sync-design-tokens.mjs``), for ``.avs-wrapper`` and ``.avs-wrapper.avs-dark``. ``to_html``
+    puts it in the export page, so the page's tooltip and background use the widget's own values."""
+    css = get_css()
+    start = css.find("/* design-tokens:start")
+    end = css.find("/* design-tokens:end */")
+    if start < 0 or end < start:
+        raise RuntimeError("the design-tokens markers are missing from ui/styles.css")
+    return css[start : end + len("/* design-tokens:end */")]
+
+
 def get_esm() -> str:
     """The widget's ES module: the vendored Three.js, then the esbuild bundle of the TypeScript front end."""
     return f"""\

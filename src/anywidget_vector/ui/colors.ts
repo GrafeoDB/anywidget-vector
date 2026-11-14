@@ -1,6 +1,6 @@
 // The categorical colours of one widget: a registry per colour field (registry.ts), shared by the canvas and the
-// sidebar's cluster list, so the list's swatches are the colours the points are drawn with and a cluster keeps its
-// colour for the view's life.
+// sidebar's cluster list, so a cluster's swatch is its points' data colour (Other's swatch is the full Other grey,
+// its points recede), and a cluster keeps its colour while the view shows data that has it.
 import { DARK, LIGHT } from "./palette.ts";
 import { CategoryRegistry, countBy, mixOver } from "./registry.ts";
 import type { Palette } from "./registry.ts";
@@ -14,6 +14,22 @@ export function categoryRegistry(model: object, field: string): CategoryRegistry
   if (!byField) REGISTRIES.set(model, (byField = new Map()));
   let registry = byField.get(field);
   if (!registry) byField.set(field, (registry = new CategoryRegistry()));
+  return registry;
+}
+
+/**
+ * The field's registry with the points' categories assigned. Categories that carry over keep their colour; points
+ * that share no coloured category with the registry are a new dataset (another query), so the field starts fresh
+ * and its largest categories get the 8 colours instead of all falling to Other.
+ */
+export function assignedRegistry(model: object, field: string, points: PointData[]): CategoryRegistry {
+  const counts = categoricalCounts(points, field);
+  let registry = categoryRegistry(model, field);
+  if (counts.size > 0 && ![...counts.keys()].some((category) => registry.slot(category) !== null)) {
+    registry = new CategoryRegistry();
+    REGISTRIES.get(model)!.set(field, registry);
+  }
+  registry.assign(counts);
   return registry;
 }
 

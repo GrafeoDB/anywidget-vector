@@ -219,3 +219,78 @@ test("the Run button keeps loading until a Python-side query answers", { skip },
   assert.ok(!run.classList.contains("avs-loading"), "loading ends when Python sets the status");
   cleanup();
 });
+
+test("a selection the host set before the view opens Properties on that point's details", { skip }, async () => {
+  const { el, cleanup } = await mount({
+    points: [
+      { id: "a", x: 1, y: 0, z: 0, label: "Alpha" },
+      { id: "b", x: 0, y: 2, z: 0, label: "Beta" },
+    ],
+    selected_points: ["b"],
+  });
+  try {
+    // Settings is a right panel too: find Properties by its content
+    const content = el.querySelector(".avs-properties-content")!;
+    assert.ok(content.closest(".avs-panel")?.classList.contains("avs-open"), "Properties is open at mount");
+    const details = content.textContent ?? "";
+    assert.ok(details.includes("Selected") && details.includes("Beta"), `the details of b, got: ${details}`);
+  } finally {
+    cleanup();
+  }
+});
+
+test("Properties follows new points under the same selection", { skip }, async () => {
+  const { model, el, cleanup } = await mount({ points: [{ id: "a", x: 0, y: 0, z: 0, label: "Old" }], selected_points: ["a"] });
+  try {
+    model.values.points = [{ id: "a", x: 0, y: 0, z: 0, label: "New" }];
+    model.emit("change:points");
+    const details = el.querySelector(".avs-properties-content")!.textContent ?? "";
+    assert.ok(details.includes("New") && !details.includes("Old"), `the new point's details, got: ${details}`);
+  } finally {
+    cleanup();
+  }
+});
+
+test("a cluster row is a keyboard button: Tab reaches it, Enter and Space select its points", { skip }, async () => {
+  const { window, model, el, cleanup } = await mount({
+    points: [
+      { id: "a", x: 0, y: 0, z: 0, kind: "cat" },
+      { id: "b", x: 1, y: 0, z: 0, kind: "dog" },
+      { id: "c", x: 0, y: 1, z: 0, kind: "cat" },
+    ],
+    color_field: "kind",
+  });
+  try {
+    const rows = [...el.querySelectorAll<HTMLElement>(".avs-cluster-content .avs-clickable")];
+    const cat = rows.find((r) => r.textContent?.includes("cat"));
+    const dog = rows.find((r) => r.textContent?.includes("dog"));
+    assert.ok(cat && dog, "a row per cluster");
+    for (const row of rows) {
+      assert.equal(row.getAttribute("role"), "button");
+      assert.equal(row.tabIndex, 0);
+    }
+    cat.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    assert.deepEqual(model.values.selected_points, ["a", "c"]);
+    dog.dispatchEvent(new window.KeyboardEvent("keydown", { key: " ", bubbles: true }));
+    assert.deepEqual(model.values.selected_points, ["b"]);
+  } finally {
+    cleanup();
+  }
+});
+
+test("the selection mode buttons show the host's mode from the start, with aria-pressed", { skip }, async () => {
+  const pressed = (el: HTMLElement) =>
+    [...el.querySelectorAll<HTMLButtonElement>(".avs-mode-btn")].map((b) => [b.title, b.getAttribute("aria-pressed")]);
+  const box = await mount({ selection_mode: "box" });
+  try {
+    assert.deepEqual(pressed(box.el), [["Click / multi-select mode", "false"], ["Box select mode", "true"], ["Lasso select mode", "false"]]);
+  } finally {
+    box.cleanup();
+  }
+  const plain = await mount();
+  try {
+    assert.deepEqual(pressed(plain.el).map(([, on]) => on), ["true", "false", "false"]);
+  } finally {
+    plain.cleanup();
+  }
+});

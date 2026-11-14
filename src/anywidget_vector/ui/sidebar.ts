@@ -3,7 +3,7 @@
  */
 import { ICONS } from "../static/icons.ts";
 import type { Panel, PanelCallbacks, PointData, WidgetModel } from "./types.ts";
-import { categoricalCounts, categoryRegistry, paletteFor } from "./colors.ts";
+import { assignedRegistry, paletteFor } from "./colors.ts";
 
 export function createSidebar(model: WidgetModel, callbacks: PanelCallbacks): Panel {
   const panel = document.createElement("div");
@@ -77,7 +77,8 @@ export function createSidebar(model: WidgetModel, callbacks: PanelCallbacks): Pa
     if (name) {
       const item = document.createElement("div");
       item.className = "avs-collection-item avs-active";
-      item.setAttribute("aria-pressed", "true");
+      // The collection in use: a status, not a control
+      item.setAttribute("aria-current", "true");
       item.textContent = name;
       collectionsList.appendChild(item);
     } else {
@@ -153,8 +154,7 @@ export function createSidebar(model: WidgetModel, callbacks: PanelCallbacks): Pa
 
     const sorted = Object.entries(groups).sort((a, b) => b[1] - a[1]);
     // The same assignment the canvas draws with: the 8 largest categories in the data colours, the rest Other
-    const registry = categoryRegistry(model, colorField);
-    registry.assign(categoricalCounts(points, colorField));
+    const registry = assignedRegistry(model, colorField, points);
     const palette = paletteFor(model);
     const numeric = points.some((p) => typeof p[colorField] === "number");
     if (sorted.length === 0) {
@@ -179,14 +179,23 @@ export function createSidebar(model: WidgetModel, callbacks: PanelCallbacks): Pa
         row.prepend(swatch);
       }
 
-      row.addEventListener("click", () => {
-        // Filter/highlight cluster
+      // Selects the cluster's points; a button for the keyboard too (Tab to it, Enter or Space)
+      row.setAttribute("role", "button");
+      row.tabIndex = 0;
+      const selectCluster = () => {
         const ids = points
           .filter((p) => String(p[colorField] ?? "unknown") === String(key))
           .map((p) => p.id)
           .filter(Boolean);
         model.set("selected_points", ids);
         model.save_changes();
+      };
+      row.addEventListener("click", selectCluster);
+      row.addEventListener("keydown", (e: KeyboardEvent) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          selectCluster();
+        }
       });
 
       clusterContent.appendChild(row);

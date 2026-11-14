@@ -1,5 +1,6 @@
 // The cluster list explains the colours: each row has its swatch, the 8 largest clusters in the data colours and
-// the rest in Other (registry.ts), the same colours the points are drawn with. jsdom from `npm ci --prefix tests/js`.
+// the rest in Other (registry.ts): a cluster's swatch is its points' data colour, Other's the full Other grey.
+// jsdom from `npm ci --prefix tests/js`.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 

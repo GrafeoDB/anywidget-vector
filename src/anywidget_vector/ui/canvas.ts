@@ -7,10 +7,10 @@ const mesh = (o: THREE_NS.Object3D): THREE_NS.Mesh => o as THREE_NS.Mesh;
 const mat = (o: THREE_NS.Object3D) => (o as THREE_NS.Mesh).material as THREE_NS.Material | undefined;
 
 import { colorScale } from "./constants.ts";
-import { categoricalCounts, categoryColor, categoryRegistry, paletteFor } from "./colors.ts";
+import { assignedRegistry, categoryColor, paletteFor } from "./colors.ts";
 import { fitDistance, selectionDistance } from "./frame.ts";
-import { mixOver } from "./registry.ts";
 import { applyInk } from "./ink.ts";
+import { disposeTree, labChrome } from "./lab.ts";
 import type { CategoryRegistry, Palette } from "./registry.ts";
 import { ICONS } from "../static/icons.ts";
 import type { CanvasCallbacks, PointData, WidgetModel } from "./types.ts";
@@ -84,8 +84,13 @@ export function createCanvas(model: WidgetModel, container: HTMLElement, callbac
   let mouse: THREE_NS.Vector2;
   let hoveredObject: { pointIndex: number; pointId: string } | null = null;
   let tooltip: HTMLDivElement;
-  let axesGroup: THREE_NS.Group;
-  let gridHelper: THREE_NS.GridHelper | null;
+  let chrome: THREE_NS.Group | null = null;
+  // Whether the last drawn points were any: points arriving in an empty view are framed
+  let hasPoints = false;
+  // The last filter the toolbar applied, so a redraw of the points (a theme switch) keeps it
+  let lastFilter = { text: "", hard: false };
+  // The selection mode buttons, set up with the canvas controls card
+  let modeButtons: [HTMLButtonElement, string][] = [];
   let animationId: number;
   let resizeObserver: ResizeObserver;
   let selectionRect: HTMLDivElement;
@@ -144,19 +149,23 @@ export function createCanvas(model: WidgetModel, container: HTMLElement, callbac
     controls.enableDamping = true;
     controls.dampingFactor = 0.08;
     controls.zoomSpeed = 0.3;
-    controls.enableZoom = false; // disable built-in scroll zoom
+    // On for pinch: OrbitControls zooms on touch only with enableZoom (the controls card has no zoom buttons under
+    // 480px). The wheel keeps the gentler zoom below, which stops the event before it reaches OrbitControls
+    controls.enableZoom = true;
     const target = model.get("camera_target") || [0, 0, 0];
     controls.target.set(target[0], target[1], target[2]);
 
-    // Custom smooth scroll zoom with reduced sensitivity
-    renderer.domElement.addEventListener("wheel", (e: WheelEvent) => {
+    // Custom smooth scroll zoom with reduced sensitivity, in the capture phase on the container so it runs first
+    container.addEventListener("wheel", (e: WheelEvent) => {
+      if (e.target !== renderer.domElement) return;
       e.preventDefault();
+      e.stopPropagation();
       const factor = 1 + e.deltaY * 0.0003;
       const offset = camera.position.clone().sub(controls.target);
       offset.multiplyScalar(factor);
       camera.position.copy(controls.target).add(offset);
       controls.update();
-    }, { passive: false });
+    }, { passive: false, capture: true });
 
     // Lighting
     scene.add(new THREE.AmbientLight(0xffffff, 0.6));
@@ -171,8 +180,6 @@ export function createCanvas(model: WidgetModel, container: HTMLElement, callbac
     scene.add(connectionsGroup);
     selectionGroup = new THREE.Group();
     scene.add(selectionGroup);
-    axesGroup = new THREE.Group();
-    scene.add(axesGroup);
 
     // Setup
     setupAxesAndGrid();
@@ -181,6 +188,8 @@ export function createCanvas(model: WidgetModel, container: HTMLElement, callbac
     setupZoomControls();
     setupBoxSelection();
     setupLassoSelection();
+    // The mode the host set (selection_mode="box" in the constructor), not always Click
+    showMode(currentMode);
     setupKeyboardShortcuts();
     createPoints();
     createConnections();
@@ -207,48 +216,21 @@ export function createCanvas(model: WidgetModel, container: HTMLElement, callbac
   }
 
   function setupAxesAndGrid() {
-    while (axesGroup.children.length > 0) axesGroup.remove(axesGroup.children[0]);
-    if (gridHelper) { scene.remove(gridHelper); gridHelper = null; }
-
-    // Lab chrome (as the graph's 3D view): the grid a faint hairline, the axes in the edge colour with muted mono
-    // labels, no red, green and blue
-    const pal = paletteFor(model);
-    const bg = String(model.get("background") || "");
-    const base = /^#[0-9a-f]{6}$/i.test(bg) ? bg : pal.background;
-    if (model.get("show_axes")) {
-      // One line per axis (the vendored three.js has Line, not LineSegments)
-      const axisMaterial = new THREE.LineBasicMaterial({ color: pal.edge });
-      for (const end of [[1.2, 0, 0], [0, 1.2, 0], [0, 0, 1.2]]) {
-        const geometry = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), new THREE.Vector3(end[0], end[1], end[2])]);
-        axesGroup.add(new THREE.Line(geometry, axisMaterial));
-      }
-      const labels = model.get("axis_labels") || { x: "X", y: "Y", z: "Z" };
-      addAxisLabel(labels.x, [1.32, 0, 0], pal.other);
-      addAxisLabel(labels.y, [0, 1.32, 0], pal.other);
-      addAxisLabel(labels.z, [0, 0, 1.32], pal.other);
+    // The old axes, letters and grid go with their GPU resources: this runs on every theme switch
+    if (chrome) {
+      scene.remove(chrome);
+      disposeTree(chrome);
     }
-
-    if (model.get("show_grid")) {
-      gridHelper = new THREE.GridHelper(2, model.get("grid_divisions") || 10, mixOver(pal.edge, base, 0.7), mixOver(pal.edge, base, 0.4));
-      scene.add(gridHelper);
-    }
-  }
-
-  function addAxisLabel(text: string, position: number[], color: string): void {
-    const canvas = document.createElement("canvas");
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    canvas.width = 128; canvas.height = 32;
-    ctx.font = '500 22px "JetBrains Mono", ui-monospace, monospace';
-    ctx.fillStyle = color;
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText(text, 64, 16);
-    const texture = new THREE.CanvasTexture(canvas);
-    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, depthTest: false }));
-    sprite.position.set(position[0], position[1], position[2]);
-    sprite.scale.set(0.26, 0.065, 1);
-    axesGroup.add(sprite);
+    chrome = labChrome({
+      showAxes: Boolean(model.get("show_axes")),
+      showGrid: Boolean(model.get("show_grid")),
+      labels: model.get("axis_labels") || {},
+      divisions: model.get("grid_divisions") || 10,
+      palette: paletteFor(model),
+      // Any CSS colour the host passes (#rgb, rgb(), a name): mixOver reads it
+      background: String(model.get("background") || ""),
+    });
+    scene.add(chrome);
   }
 
   function createPoints() {
@@ -260,6 +242,7 @@ export function createCanvas(model: WidgetModel, container: HTMLElement, callbac
     }
 
     const points = (model.get("points") ?? []) as PointData[];
+    hasPoints = points.length > 0;
     if (points.length === 0) return;
 
     // Auto-scale point sizes relative to data extent
@@ -284,8 +267,7 @@ export function createCanvas(model: WidgetModel, container: HTMLElement, callbac
     };
     // The 8 data colours go to the largest categories of the colour field; earlier assignments stay (registry.ts)
     if (opts.colorField) {
-      opts.registry = categoryRegistry(model, opts.colorField);
-      opts.registry.assign(categoricalCounts(points, opts.colorField));
+      opts.registry = assignedRegistry(model, opts.colorField, points);
     }
 
     // Compute domains
@@ -581,7 +563,7 @@ export function createCanvas(model: WidgetModel, container: HTMLElement, callbac
     modeGroup.className = "avs-mode-group";
 
     const clickBtn = document.createElement("button");
-    clickBtn.className = "avs-zoom-btn avs-mode-btn avs-mode-active";
+    clickBtn.className = "avs-zoom-btn avs-mode-btn";
     clickBtn.innerHTML = ICONS.cursor;
     clickBtn.title = "Click / multi-select mode";
 
@@ -595,19 +577,12 @@ export function createCanvas(model: WidgetModel, container: HTMLElement, callbac
     lassoBtn.innerHTML = ICONS.lasso;
     lassoBtn.title = "Lasso select mode";
 
+    modeButtons = [[clickBtn, "click"], [boxBtn, "box"], [lassoBtn, "lasso"]];
+
     function setActiveMode(mode: string): void {
-      currentMode = mode;
       model.set("selection_mode", mode);
       model.save_changes();
-
-      for (const [btn, on] of [[clickBtn, mode === "click"], [boxBtn, mode === "box"], [lassoBtn, mode === "lasso"]] as const) {
-        btn.classList.toggle("avs-mode-active", on);
-        btn.setAttribute("aria-pressed", String(on));
-      }
-
-      controls.enabled = (mode === "click");
-      if (boxOverlay) boxOverlay.style.display = (mode === "box") ? "block" : "none";
-      if (lassoOverlayEl) lassoOverlayEl.style.display = (mode === "lasso") ? "block" : "none";
+      showMode(mode);
     }
 
     clickBtn.addEventListener("click", () => setActiveMode("click"));
@@ -617,7 +592,7 @@ export function createCanvas(model: WidgetModel, container: HTMLElement, callbac
     // Sync with model changes from Python side
     model.on("change:selection_mode", () => {
       const mode = model.get("selection_mode") || "click";
-      if (mode !== currentMode) setActiveMode(mode);
+      if (mode !== currentMode) showMode(mode);
     });
 
     modeGroup.appendChild(clickBtn);
@@ -630,6 +605,20 @@ export function createCanvas(model: WidgetModel, container: HTMLElement, callbac
     zoomGroup.append(zoomInBtn, zoomOutBtn, zoomFitBtn);
     zoomControls.append(modeGroup, zoomGroup);
     container.appendChild(zoomControls);
+  }
+
+  /** Show a selection mode: its button pressed, the orbit controls and the box or lasso overlay to match. */
+  function showMode(mode: string): void {
+    currentMode = mode;
+    // Multi-select is the click button's mode too (shift-click adds to the selection)
+    const shown = mode === "multi" ? "click" : mode;
+    for (const [btn, name] of modeButtons) {
+      btn.classList.toggle("avs-mode-active", name === shown);
+      btn.setAttribute("aria-pressed", String(name === shown));
+    }
+    controls.enabled = shown === "click";
+    if (boxOverlay) boxOverlay.style.display = mode === "box" ? "block" : "none";
+    if (lassoOverlayEl) lassoOverlayEl.style.display = mode === "lasso" ? "block" : "none";
   }
 
   function setupBoxSelection() {
@@ -750,14 +739,28 @@ export function createCanvas(model: WidgetModel, container: HTMLElement, callbac
   }
 
   function bindModelEvents() {
-    model.on("change:points", () => { createPoints(); createConnections(); updateSelectionHighlight(); });
+    model.on("change:points", () => {
+      // Points arriving in an empty view (a query's first results) are framed as at open; a view that already had
+      // points keeps the user's camera
+      const wasEmpty = !hasPoints;
+      createPoints();
+      createConnections();
+      if (wasEmpty && hasPoints) fitToView();
+      updateSelectionHighlight();
+    });
     model.on("change:background", () => {
       scene.background = new THREE.Color(model.get("background"));
       inkBackground.value.set(model.get("background"));
       setupAxesAndGrid();
     });
-    // A theme switch redraws the points (each theme has its own data colours) and the grid and axes
-    model.on("change:dark_mode", () => { createPoints(); setupAxesAndGrid(); updateSelectionHighlight(); });
+    // A theme switch redraws the points (each theme has its own data colours) and the grid and axes; the toolbar
+    // filter and the selection stay, and the camera stays where the user left it
+    model.on("change:dark_mode", () => {
+      createPoints();
+      if (lastFilter.text) applyFilter(lastFilter.text, lastFilter.hard);
+      setupAxesAndGrid();
+      updateSelectionHighlight(false);
+    });
     model.on("change:show_axes", setupAxesAndGrid);
     model.on("change:show_grid", setupAxesAndGrid);
     model.on("change:color_field", createPoints);
@@ -774,7 +777,7 @@ export function createCanvas(model: WidgetModel, container: HTMLElement, callbac
     model.on("change:distance_metric", createConnections);
     model.on("change:connection_color", createConnections);
     model.on("change:connection_opacity", createConnections);
-    model.on("change:selected_points", updateSelectionHighlight);
+    model.on("change:selected_points", () => updateSelectionHighlight());
     model.on("change:camera_position", () => {
       const pos = model.get("camera_position");
       if (pos) camera.position.set(pos[0], pos[1], pos[2]);
@@ -807,6 +810,7 @@ export function createCanvas(model: WidgetModel, container: HTMLElement, callbac
   }
 
   function applyFilter(filterText: string, hard: boolean): { matched: number; total: number } {
+    lastFilter = { text: filterText, hard };
     const points = (model.get("points") ?? []) as PointData[];
     const filter = (filterText || "").toLowerCase().trim();
     const total = points.length;
@@ -986,7 +990,8 @@ export function createCanvas(model: WidgetModel, container: HTMLElement, callbac
     return inside;
   }
 
-  function updateSelectionHighlight() {
+  /** Show only the selected points; `frame` also moves the camera to them (a new selection, not a redraw). */
+  function updateSelectionHighlight(frame = true) {
     // Clear previous highlight rings
     while (selectionGroup.children.length > 0) {
       const obj = selectionGroup.children[0];
@@ -1054,7 +1059,7 @@ export function createCanvas(model: WidgetModel, container: HTMLElement, callbac
 
     // Zoom to fit selected points
     const selectedPoints = points.filter(p => selectedSet.has(p.id));
-    if (selectedPoints.length > 0) {
+    if (frame && selectedPoints.length > 0) {
       const box = new THREE.Box3();
       selectedPoints.forEach(p => box.expandByPoint(new THREE.Vector3(p.x ?? 0, p.y ?? 0, p.z ?? 0)));
       const center = box.getCenter(new THREE.Vector3());

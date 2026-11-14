@@ -230,7 +230,8 @@ function parsed(color) {
     const full = hex.length === 3 ? hex.split("").map((d) => d + d).join("") : hex.slice(0, 6);
     return [0, 2, 4].map((i) => parseInt(full.slice(i, i + 2), 16));
   }
-  const rgb = /^rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)/i.exec(c);
+  const n = String.raw`(\d{1,3}(?:\.\d+)?)`;
+  const rgb = new RegExp(String.raw`^rgba?\(\s*${n}\s*,\s*${n}\s*,\s*${n}\s*(?:,\s*[\d.]+%?\s*)?\)$`, "i").exec(c) ?? new RegExp(String.raw`^rgba?\(\s*${n}\s+${n}\s+${n}\s*(?:\/\s*[\d.]+%?\s*)?\)$`, "i").exec(c);
   return rgb ? rgb.slice(1, 4).map((v) => Math.round(Math.min(255, Number(v)))) : null;
 }
 var RESOLVED = /* @__PURE__ */ new Map();
@@ -243,7 +244,10 @@ function channels(color) {
     if (ctx) {
       ctx.fillStyle = "#000000";
       ctx.fillStyle = color;
-      rgb = parsed(String(ctx.fillStyle));
+      const overBlack = String(ctx.fillStyle);
+      ctx.fillStyle = "#ffffff";
+      ctx.fillStyle = color;
+      rgb = overBlack === String(ctx.fillStyle) ? parsed(overBlack) : null;
     }
     RESOLVED.set(color, rgb);
   }
@@ -263,6 +267,16 @@ function categoryRegistry(model, field) {
   if (!byField) REGISTRIES.set(model, byField = /* @__PURE__ */ new Map());
   let registry = byField.get(field);
   if (!registry) byField.set(field, registry = new CategoryRegistry());
+  return registry;
+}
+function assignedRegistry(model, field, points) {
+  const counts = categoricalCounts(points, field);
+  let registry = categoryRegistry(model, field);
+  if (counts.size > 0 && ![...counts.keys()].some((category) => registry.slot(category) !== null)) {
+    registry = new CategoryRegistry();
+    REGISTRIES.get(model).set(field, registry);
+  }
+  registry.assign(counts);
   return registry;
 }
 function paletteFor(model) {
@@ -337,7 +351,7 @@ function createSidebar(model, callbacks) {
     if (name) {
       const item = document.createElement("div");
       item.className = "avs-collection-item avs-active";
-      item.setAttribute("aria-pressed", "true");
+      item.setAttribute("aria-current", "true");
       item.textContent = name;
       collectionsList.appendChild(item);
     } else {
@@ -398,8 +412,7 @@ function createSidebar(model, callbacks) {
       groups[val] = (groups[val] || 0) + 1;
     });
     const sorted = Object.entries(groups).sort((a, b) => b[1] - a[1]);
-    const registry = categoryRegistry(model, colorField);
-    registry.assign(categoricalCounts(points, colorField));
+    const registry = assignedRegistry(model, colorField, points);
     const palette = paletteFor(model);
     const numeric = points.some((p) => typeof p[colorField] === "number");
     if (sorted.length === 0) {
@@ -419,10 +432,19 @@ function createSidebar(model, callbacks) {
         swatch.title = slot === null ? "Other: beyond the 8 largest clusters" : `Colour ${slot + 1} of 8`;
         row.prepend(swatch);
       }
-      row.addEventListener("click", () => {
+      row.setAttribute("role", "button");
+      row.tabIndex = 0;
+      const selectCluster = () => {
         const ids = points.filter((p) => String(p[colorField] ?? "unknown") === String(key)).map((p) => p.id).filter(Boolean);
         model.set("selected_points", ids);
         model.save_changes();
+      };
+      row.addEventListener("click", selectCluster);
+      row.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          selectCluster();
+        }
       });
       clusterContent.appendChild(row);
     });
@@ -1024,8 +1046,7 @@ function createPropertiesPanel(model, callbacks) {
   const content = document.createElement("div");
   content.className = "avs-properties-content";
   inner.appendChild(content);
-  showEmpty(content);
-  model.on("change:selected_points", () => {
+  const showSelection = () => {
     const selectedIds = model.get("selected_points") ?? [];
     const points = model.get("points") ?? [];
     if (selectedIds.length === 0) {
@@ -1040,7 +1061,10 @@ function createPropertiesPanel(model, callbacks) {
     } else {
       showMultipleSelection(content, selectedIds.length);
     }
-  });
+  };
+  showSelection();
+  model.on("change:selected_points", showSelection);
+  model.on("change:points", showSelection);
   return {
     element: panel,
     open: () => panel.classList.add("avs-open"),
@@ -1230,6 +1254,59 @@ function applyInk(target, background) {
   material.customProgramCacheKey = () => "anywidgets-ink";
 }
 
+// lab.ts
+function labChrome(options) {
+  const group = new THREE.Group();
+  const { palette } = options;
+  if (options.showAxes) {
+    const axisMaterial = new THREE.LineBasicMaterial({ color: palette.edge });
+    for (const end of [[1.2, 0, 0], [0, 1.2, 0], [0, 0, 1.2]]) {
+      const geometry = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), new THREE.Vector3(end[0], end[1], end[2])]);
+      group.add(new THREE.Line(geometry, axisMaterial));
+    }
+    const label = (text, position) => {
+      const sprite = axisLabel(text, palette.other);
+      if (sprite) {
+        sprite.position.set(...position);
+        group.add(sprite);
+      }
+    };
+    label(options.labels.x || "X", [1.32, 0, 0]);
+    label(options.labels.y || "Y", [0, 1.32, 0]);
+    label(options.labels.z || "Z", [0, 0, 1.32]);
+  }
+  if (options.showGrid) {
+    const base = options.background || palette.background;
+    group.add(new THREE.GridHelper(2, options.divisions || 10, mixOver(palette.edge, base, 0.7), mixOver(palette.edge, base, 0.4)));
+  }
+  return group;
+}
+function axisLabel(text, color) {
+  const canvas = document.createElement("canvas");
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return null;
+  canvas.width = 128;
+  canvas.height = 32;
+  ctx.font = '500 22px "JetBrains Mono", ui-monospace, monospace';
+  ctx.fillStyle = color;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(text, 64, 16);
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(canvas), depthTest: false }));
+  sprite.scale.set(0.26, 0.065, 1);
+  return sprite;
+}
+function disposeTree(root) {
+  root.traverse((obj) => {
+    const { geometry, material } = obj;
+    geometry?.dispose();
+    for (const m of Array.isArray(material) ? material : material ? [material] : []) {
+      m.map?.dispose();
+      m.dispose();
+    }
+  });
+}
+
 // canvas.ts
 var mesh = (o) => o;
 var mat = (o) => o.material;
@@ -1277,8 +1354,10 @@ function createCanvas(model, container, callbacks) {
   let mouse;
   let hoveredObject = null;
   let tooltip;
-  let axesGroup;
-  let gridHelper;
+  let chrome = null;
+  let hasPoints = false;
+  let lastFilter = { text: "", hard: false };
+  let modeButtons = [];
   let animationId;
   let resizeObserver;
   let selectionRect;
@@ -1323,17 +1402,19 @@ function createCanvas(model, container, callbacks) {
     controls.enableDamping = true;
     controls.dampingFactor = 0.08;
     controls.zoomSpeed = 0.3;
-    controls.enableZoom = false;
+    controls.enableZoom = true;
     const target = model.get("camera_target") || [0, 0, 0];
     controls.target.set(target[0], target[1], target[2]);
-    renderer.domElement.addEventListener("wheel", (e) => {
+    container.addEventListener("wheel", (e) => {
+      if (e.target !== renderer.domElement) return;
       e.preventDefault();
+      e.stopPropagation();
       const factor = 1 + e.deltaY * 3e-4;
       const offset = camera.position.clone().sub(controls.target);
       offset.multiplyScalar(factor);
       camera.position.copy(controls.target).add(offset);
       controls.update();
-    }, { passive: false });
+    }, { passive: false, capture: true });
     scene.add(new THREE.AmbientLight(16777215, 0.6));
     const directional = new THREE.DirectionalLight(16777215, 0.8);
     directional.position.set(5, 10, 7);
@@ -1344,14 +1425,13 @@ function createCanvas(model, container, callbacks) {
     scene.add(connectionsGroup);
     selectionGroup = new THREE.Group();
     scene.add(selectionGroup);
-    axesGroup = new THREE.Group();
-    scene.add(axesGroup);
     setupAxesAndGrid();
     setupRaycaster();
     setupTooltip();
     setupZoomControls();
     setupBoxSelection();
     setupLassoSelection();
+    showMode(currentMode);
     setupKeyboardShortcuts();
     createPoints();
     createConnections();
@@ -1375,46 +1455,20 @@ function createCanvas(model, container, callbacks) {
     });
   }
   function setupAxesAndGrid() {
-    while (axesGroup.children.length > 0) axesGroup.remove(axesGroup.children[0]);
-    if (gridHelper) {
-      scene.remove(gridHelper);
-      gridHelper = null;
+    if (chrome) {
+      scene.remove(chrome);
+      disposeTree(chrome);
     }
-    const pal = paletteFor(model);
-    const bg = String(model.get("background") || "");
-    const base = /^#[0-9a-f]{6}$/i.test(bg) ? bg : pal.background;
-    if (model.get("show_axes")) {
-      const axisMaterial = new THREE.LineBasicMaterial({ color: pal.edge });
-      for (const end of [[1.2, 0, 0], [0, 1.2, 0], [0, 0, 1.2]]) {
-        const geometry = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), new THREE.Vector3(end[0], end[1], end[2])]);
-        axesGroup.add(new THREE.Line(geometry, axisMaterial));
-      }
-      const labels = model.get("axis_labels") || { x: "X", y: "Y", z: "Z" };
-      addAxisLabel(labels.x, [1.32, 0, 0], pal.other);
-      addAxisLabel(labels.y, [0, 1.32, 0], pal.other);
-      addAxisLabel(labels.z, [0, 0, 1.32], pal.other);
-    }
-    if (model.get("show_grid")) {
-      gridHelper = new THREE.GridHelper(2, model.get("grid_divisions") || 10, mixOver(pal.edge, base, 0.7), mixOver(pal.edge, base, 0.4));
-      scene.add(gridHelper);
-    }
-  }
-  function addAxisLabel(text, position, color) {
-    const canvas = document.createElement("canvas");
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    canvas.width = 128;
-    canvas.height = 32;
-    ctx.font = '500 22px "JetBrains Mono", ui-monospace, monospace';
-    ctx.fillStyle = color;
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText(text, 64, 16);
-    const texture = new THREE.CanvasTexture(canvas);
-    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, depthTest: false }));
-    sprite.position.set(position[0], position[1], position[2]);
-    sprite.scale.set(0.26, 0.065, 1);
-    axesGroup.add(sprite);
+    chrome = labChrome({
+      showAxes: Boolean(model.get("show_axes")),
+      showGrid: Boolean(model.get("show_grid")),
+      labels: model.get("axis_labels") || {},
+      divisions: model.get("grid_divisions") || 10,
+      palette: paletteFor(model),
+      // Any CSS colour the host passes (#rgb, rgb(), a name): mixOver reads it
+      background: String(model.get("background") || "")
+    });
+    scene.add(chrome);
   }
   function createPoints() {
     while (pointsGroup.children.length > 0) {
@@ -1424,6 +1478,7 @@ function createCanvas(model, container, callbacks) {
       pointsGroup.remove(obj);
     }
     const points = model.get("points") ?? [];
+    hasPoints = points.length > 0;
     if (points.length === 0) return;
     const box = new THREE.Box3();
     points.forEach((p) => box.expandByPoint(new THREE.Vector3(p.x ?? 0, p.y ?? 0, p.z ?? 0)));
@@ -1443,8 +1498,7 @@ function createCanvas(model, container, callbacks) {
       registry: null
     };
     if (opts.colorField) {
-      opts.registry = categoryRegistry(model, opts.colorField);
-      opts.registry.assign(categoricalCounts(points, opts.colorField));
+      opts.registry = assignedRegistry(model, opts.colorField, points);
     }
     if (opts.colorField && !opts.colorDomain) {
       const values = points.map((p) => p[opts.colorField]).filter((v) => typeof v === "number");
@@ -1709,7 +1763,7 @@ function createCanvas(model, container, callbacks) {
     const modeGroup = document.createElement("div");
     modeGroup.className = "avs-mode-group";
     const clickBtn = document.createElement("button");
-    clickBtn.className = "avs-zoom-btn avs-mode-btn avs-mode-active";
+    clickBtn.className = "avs-zoom-btn avs-mode-btn";
     clickBtn.innerHTML = ICONS.cursor;
     clickBtn.title = "Click / multi-select mode";
     const boxBtn = document.createElement("button");
@@ -1720,24 +1774,18 @@ function createCanvas(model, container, callbacks) {
     lassoBtn.className = "avs-zoom-btn avs-mode-btn";
     lassoBtn.innerHTML = ICONS.lasso;
     lassoBtn.title = "Lasso select mode";
+    modeButtons = [[clickBtn, "click"], [boxBtn, "box"], [lassoBtn, "lasso"]];
     function setActiveMode(mode) {
-      currentMode = mode;
       model.set("selection_mode", mode);
       model.save_changes();
-      for (const [btn, on] of [[clickBtn, mode === "click"], [boxBtn, mode === "box"], [lassoBtn, mode === "lasso"]]) {
-        btn.classList.toggle("avs-mode-active", on);
-        btn.setAttribute("aria-pressed", String(on));
-      }
-      controls.enabled = mode === "click";
-      if (boxOverlay) boxOverlay.style.display = mode === "box" ? "block" : "none";
-      if (lassoOverlayEl) lassoOverlayEl.style.display = mode === "lasso" ? "block" : "none";
+      showMode(mode);
     }
     clickBtn.addEventListener("click", () => setActiveMode("click"));
     boxBtn.addEventListener("click", () => setActiveMode("box"));
     lassoBtn.addEventListener("click", () => setActiveMode("lasso"));
     model.on("change:selection_mode", () => {
       const mode = model.get("selection_mode") || "click";
-      if (mode !== currentMode) setActiveMode(mode);
+      if (mode !== currentMode) showMode(mode);
     });
     modeGroup.appendChild(clickBtn);
     modeGroup.appendChild(boxBtn);
@@ -1747,6 +1795,17 @@ function createCanvas(model, container, callbacks) {
     zoomGroup.append(zoomInBtn, zoomOutBtn, zoomFitBtn);
     zoomControls.append(modeGroup, zoomGroup);
     container.appendChild(zoomControls);
+  }
+  function showMode(mode) {
+    currentMode = mode;
+    const shown = mode === "multi" ? "click" : mode;
+    for (const [btn, name] of modeButtons) {
+      btn.classList.toggle("avs-mode-active", name === shown);
+      btn.setAttribute("aria-pressed", String(name === shown));
+    }
+    controls.enabled = shown === "click";
+    if (boxOverlay) boxOverlay.style.display = mode === "box" ? "block" : "none";
+    if (lassoOverlayEl) lassoOverlayEl.style.display = mode === "lasso" ? "block" : "none";
   }
   function setupBoxSelection() {
     boxOverlay = document.createElement("div");
@@ -1852,8 +1911,10 @@ function createCanvas(model, container, callbacks) {
   }
   function bindModelEvents() {
     model.on("change:points", () => {
+      const wasEmpty = !hasPoints;
       createPoints();
       createConnections();
+      if (wasEmpty && hasPoints) fitToView();
       updateSelectionHighlight();
     });
     model.on("change:background", () => {
@@ -1863,8 +1924,9 @@ function createCanvas(model, container, callbacks) {
     });
     model.on("change:dark_mode", () => {
       createPoints();
+      if (lastFilter.text) applyFilter(lastFilter.text, lastFilter.hard);
       setupAxesAndGrid();
-      updateSelectionHighlight();
+      updateSelectionHighlight(false);
     });
     model.on("change:show_axes", setupAxesAndGrid);
     model.on("change:show_grid", setupAxesAndGrid);
@@ -1882,7 +1944,7 @@ function createCanvas(model, container, callbacks) {
     model.on("change:distance_metric", createConnections);
     model.on("change:connection_color", createConnections);
     model.on("change:connection_opacity", createConnections);
-    model.on("change:selected_points", updateSelectionHighlight);
+    model.on("change:selected_points", () => updateSelectionHighlight());
     model.on("change:camera_position", () => {
       const pos = model.get("camera_position");
       if (pos) camera.position.set(pos[0], pos[1], pos[2]);
@@ -1912,6 +1974,7 @@ function createCanvas(model, container, callbacks) {
     });
   }
   function applyFilter(filterText, hard) {
+    lastFilter = { text: filterText, hard };
     const points = model.get("points") ?? [];
     const filter = (filterText || "").toLowerCase().trim();
     const total = points.length;
@@ -2068,7 +2131,7 @@ function createCanvas(model, container, callbacks) {
     }
     return inside;
   }
-  function updateSelectionHighlight() {
+  function updateSelectionHighlight(frame = true) {
     while (selectionGroup.children.length > 0) {
       const obj = selectionGroup.children[0];
       if (mesh(obj).geometry) mesh(obj).geometry.dispose();
@@ -2124,7 +2187,7 @@ function createCanvas(model, container, callbacks) {
       }
     });
     const selectedPoints = points.filter((p) => selectedSet.has(p.id));
-    if (selectedPoints.length > 0) {
+    if (frame && selectedPoints.length > 0) {
       const box = new THREE.Box3();
       selectedPoints.forEach((p) => box.expandByPoint(new THREE.Vector3(p.x ?? 0, p.y ?? 0, p.z ?? 0)));
       const center = box.getCenter(new THREE.Vector3());

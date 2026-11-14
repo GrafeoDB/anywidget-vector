@@ -10,7 +10,8 @@
     "build": "node scripts/build-esm.mjs",
     "check": "node scripts/build-esm.mjs --check",
     "typecheck": "tsc --noEmit",
-    "test": "node --test tests/js/*.test.ts"
+    "test": "node --test tests/js/*.test.ts",
+    "sync-tokens": "node scripts/sync-design-tokens.mjs"
   },
   "devDependencies": {
     "@types/jsdom": "30.0.0",

@@ -63,9 +63,9 @@ test("applyInk wires the shared background uniform and keys the program", () => 
   assert.equal(material.customProgramCacheKey(), "anywidgets-ink");
 });
 
-test("the vendored three.js Phong shader has the anchors", () => {
+test("the vendored three.js bundle has the three shader anchors ink.ts hooks into", () => {
   const three = readFileSync(new URL("../../src/anywidget_vector/ui/vendor/three.min.js", import.meta.url), "utf8");
-  for (const anchor of ["#include <color_fragment>", "#include <opaque_fragment>", "#include <dithering_fragment>"]) {
+  for (const anchor of ["#include <common>", "#include <color_fragment>", "#include <opaque_fragment>"]) {
     assert.ok(three.includes(anchor), anchor);
   }
 });

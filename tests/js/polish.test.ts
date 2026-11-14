@@ -48,7 +48,7 @@ test("Other points recede: their ink is Other faded towards the background", () 
   assert.ok(OTHER_RECEDE < 1 && OTHER_RECEDE >= 0.4);
 });
 
-test("Properties opens when points are selected and closes when the selection clears", () => {
+test("propertiesForSelection: open on a selection, close when it clears, nothing with show_properties off", () => {
   assert.equal(propertiesForSelection(["a"], true), "open");
   assert.equal(propertiesForSelection([], true), "close");
   assert.equal(propertiesForSelection(["a"], false), null);
@@ -73,4 +73,21 @@ test("a point without a value for the colour field is Other, not the largest clu
   assert.equal(categoryColor(undefined, registry, LIGHT), otherInk(LIGHT));
   assert.equal(categoryColor(null, registry, LIGHT), otherInk(LIGHT));
   assert.equal(categoryColor("never seen", registry, LIGHT), otherInk(LIGHT));
+});
+
+test("a new dataset gets the 8 colours afresh; categories that carry over keep theirs", async () => {
+  const { assignedRegistry } = await import("../../src/anywidget_vector/ui/colors.ts");
+  const view = {};
+  const at = { x: 0, y: 0, z: 0 };
+  const first = Array.from({ length: 10 }, (_, i) => ({ ...at, id: `a${i}`, kind: `old${i}` }));
+  assert.equal(assignedRegistry(view, "kind", first).slot("old0"), 0);
+  // A second query with only new labels: its largest cluster gets the first colour, not Other
+  const second = [...Array.from({ length: 5 }, (_, i) => ({ ...at, id: `b${i}`, kind: "big" })), { ...at, id: "c", kind: "small" }];
+  const fresh = assignedRegistry(view, "kind", second);
+  assert.equal(fresh.slot("big"), 0);
+  assert.equal(fresh.slot("small"), 1);
+  // Data that shares a category with it keeps those colours, and a new one takes the next free colour
+  const next = assignedRegistry(view, "kind", [{ ...at, id: "d", kind: "small" }, { ...at, id: "e", kind: "more" }]);
+  assert.equal(next.slot("small"), 1);
+  assert.equal(next.slot("more"), 2);
 });

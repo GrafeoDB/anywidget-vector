@@ -8,6 +8,8 @@ import { DARK, LIGHT } from "./palette.ts";
 import { CategoryRegistry } from "./registry.ts";
 import { categoricalCounts } from "./colors.ts";
 import { fitDistance } from "./frame.ts";
+import { applyInk } from "./ink.ts";
+import { labChrome } from "./lab.ts";
 import type { PointData } from "./types.ts";
 
 // Written into the page by widget.py's to_html before this bundle runs
@@ -22,6 +24,7 @@ declare const OPTIONS: {
   size_range?: number[];
   show_axes?: boolean;
   show_grid?: boolean;
+  grid_divisions?: number;
   axis_labels?: { x?: string; y?: string; z?: string };
 };
 
@@ -67,7 +70,9 @@ if (opts.sizeField) {
 // ---------------------------------------------------------------------------
 const container = document.getElementById("container")!;
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(OPTIONS.background || "#1a1a2e");
+// The background chosen in Python, else the theme's canvas colour (as the widget)
+const background = OPTIONS.background || opts.palette.background;
+scene.background = new THREE.Color(background);
 
 const width = container.clientWidth;
 const height = container.clientHeight;
@@ -94,34 +99,17 @@ controls.dampingFactor = 0.05;
 // ---------------------------------------------------------------------------
 // Axes and grid
 // ---------------------------------------------------------------------------
-if (OPTIONS.show_axes) {
-  const axes = new THREE.AxesHelper(1.2);
-  scene.add(axes);
-  const labels = OPTIONS.axis_labels || { x: "X", y: "Y", z: "Z" };
-  function addAxisLabel(text: string, position: [number, number, number], color: number) {
-    const canvas = document.createElement("canvas");
-    const ctx = canvas.getContext("2d")!;
-    canvas.width = 64;
-    canvas.height = 32;
-    ctx.font = "bold 24px Arial";
-    ctx.fillStyle = "#" + color.toString(16).padStart(6, "0");
-    ctx.textAlign = "center";
-    ctx.fillText(text, 32, 24);
-    const texture = new THREE.CanvasTexture(canvas);
-    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture }));
-    sprite.position.set(position[0], position[1], position[2]);
-    sprite.scale.set(0.25, 0.125, 1);
-    scene.add(sprite);
-  }
-  addAxisLabel(labels.x || "X", [1.3, 0, 0], 0xff4444);
-  addAxisLabel(labels.y || "Y", [0, 1.3, 0], 0x44ff44);
-  addAxisLabel(labels.z || "Z", [0, 0, 1.3], 0x4444ff);
-}
-
-if (OPTIONS.show_grid) {
-  const gridHelper = new THREE.GridHelper(2, 10, 0x444444, 0x333333);
-  scene.add(gridHelper);
-}
+// The widget's own (lab.ts): grey axes with mono letters and a hairline grid
+scene.add(
+  labChrome({
+    showAxes: Boolean(OPTIONS.show_axes),
+    showGrid: Boolean(OPTIONS.show_grid),
+    labels: OPTIONS.axis_labels || {},
+    divisions: OPTIONS.grid_divisions || 10,
+    palette: opts.palette,
+    background,
+  }),
+);
 
 // ---------------------------------------------------------------------------
 // Points
@@ -133,6 +121,8 @@ if (DATA.length > 0) {
   // One instanced mesh for every point: one geometry, one material and one draw call, whatever the point count
   const geometry = new THREE.SphereGeometry(1, 16, 16);
   const material = new THREE.MeshPhongMaterial({ color: 0xffffff });
+  // Ink points, as in the widget (ink.ts): the body the colour over the background, the silhouette the full colour
+  applyInk(material, { value: new THREE.Color(background) });
   const mesh = new THREE.InstancedMesh(geometry, material, DATA.length);
   const matrix = new THREE.Matrix4();
   DATA.forEach((point, idx) => {
@@ -152,6 +142,10 @@ if (DATA.length > 0) {
   const distance = fitDistance(DATA.map((p) => ({ x: p.x ?? 0, y: p.y ?? 0, z: p.z ?? 0 })), center, camera.fov, camera.aspect) || 2;
   controls.target.copy(center);
   camera.position.copy(center.clone().add(new THREE.Vector3(0.6, 0.5, 0.8).normalize().multiplyScalar(distance)));
+  // Clipping planes for the data's scale, as the widget's fitToView
+  camera.near = Math.max(0.01, distance * 0.001);
+  camera.far = Math.max(1000, distance * 10);
+  camera.updateProjectionMatrix();
   controls.update();
 }
 

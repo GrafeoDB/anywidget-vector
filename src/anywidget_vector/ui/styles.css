@@ -57,7 +57,8 @@
 .avs-wrapper {
   font-family: var(--avs-font-body);
   background: var(--avs-bg);
-  border-radius: var(--avs-radius-box);
+  /* --avs-radius is the box radius unless a host sets it (the variable vector had before the radius roles) */
+  border-radius: var(--avs-radius);
   overflow: hidden;
   position: relative;
   display: flex;
@@ -79,7 +80,7 @@
 }
 
 /* Keyboard focus shows on every control; text fields keep their own focus border */
-.avs-wrapper :is(button, select, a, summary, [type="checkbox"], [type="radio"], [type="range"], [type="color"]):focus-visible {
+.avs-wrapper :is(button, select, a, summary, [role="button"], [type="checkbox"], [type="radio"], [type="range"], [type="color"]):focus-visible {
   outline: 2px solid var(--avs-ring);
   outline-offset: 2px;
 }

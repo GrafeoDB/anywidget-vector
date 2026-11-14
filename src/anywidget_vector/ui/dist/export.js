@@ -71,7 +71,8 @@
       const full = hex.length === 3 ? hex.split("").map((d) => d + d).join("") : hex.slice(0, 6);
       return [0, 2, 4].map((i) => parseInt(full.slice(i, i + 2), 16));
     }
-    const rgb = /^rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)/i.exec(c);
+    const n = String.raw`(\d{1,3}(?:\.\d+)?)`;
+    const rgb = new RegExp(String.raw`^rgba?\(\s*${n}\s*,\s*${n}\s*,\s*${n}\s*(?:,\s*[\d.]+%?\s*)?\)$`, "i").exec(c) ?? new RegExp(String.raw`^rgba?\(\s*${n}\s+${n}\s+${n}\s*(?:\/\s*[\d.]+%?\s*)?\)$`, "i").exec(c);
     return rgb ? rgb.slice(1, 4).map((v) => Math.round(Math.min(255, Number(v)))) : null;
   }
   var RESOLVED = /* @__PURE__ */ new Map();
@@ -84,15 +85,18 @@
       if (ctx) {
         ctx.fillStyle = "#000000";
         ctx.fillStyle = color;
-        rgb = parsed(String(ctx.fillStyle));
+        const overBlack = String(ctx.fillStyle);
+        ctx.fillStyle = "#ffffff";
+        ctx.fillStyle = color;
+        rgb = overBlack === String(ctx.fillStyle) ? parsed(overBlack) : null;
       }
       RESOLVED.set(color, rgb);
     }
     return RESOLVED.get(color) ?? null;
   }
-  function mixOver(color, background, alpha) {
+  function mixOver(color, background2, alpha) {
     const c = channels(color);
-    const b = channels(background);
+    const b = channels(background2);
     if (!c || !b) return color;
     return "#" + c.map((v, i) => Math.round(alpha * v + (1 - alpha) * b[i]).toString(16).padStart(2, "0")).join("");
   }
@@ -120,6 +124,84 @@
     const halfV = fovDeg * Math.PI / 360;
     const half = aspect < 1 ? Math.atan(Math.tan(halfV) * aspect) : halfV;
     return radius / Math.sin(half) * 1.08;
+  }
+
+  // ink.ts
+  var INK_FILL = 0.38;
+  var INK_SHADE = 0.35;
+  var RIM_FROM = 0.55;
+  var RIM_TO = 0.8;
+  var ANCHORS = ["#include <common>", "#include <color_fragment>", "#include <opaque_fragment>"];
+  function inkFragment(fragment) {
+    for (const anchor of ANCHORS) {
+      if (!fragment.includes(anchor)) throw new Error(`ink.ts: the shader has no ${anchor} to hook into`);
+    }
+    return fragment.replace(
+      "#include <common>",
+      "#include <common>\nuniform vec3 uInkBackground;\nuniform float uInkFill;\nuniform float uInkShade;\nvec3 inkMix(vec3 a, vec3 b, float t) { return pow(mix(pow(a, vec3(1.0 / 2.2)), pow(b, vec3(1.0 / 2.2)), t), vec3(2.2)); }"
+    ).replace(
+      "#include <color_fragment>",
+      "#include <color_fragment>\n	vec3 inkColor = diffuseColor.rgb;\n	vec3 inkFill = inkMix(uInkBackground, inkColor, uInkFill);\n	diffuseColor.rgb = inkFill;"
+    ).replace(
+      "#include <opaque_fragment>",
+      `#include <opaque_fragment>
+	gl_FragColor.rgb = mix(inkFill, gl_FragColor.rgb, uInkShade);
+	float inkRim = 1.0 - abs(dot(normalize(normal), normalize(vViewPosition)));
+	gl_FragColor.rgb = mix(gl_FragColor.rgb, inkColor, smoothstep(${RIM_FROM.toFixed(2)}, ${RIM_TO.toFixed(2)}, inkRim));`
+    );
+  }
+  function applyInk(target, background2) {
+    const material = target;
+    material.onBeforeCompile = (shader) => {
+      shader.uniforms.uInkBackground = background2;
+      shader.uniforms.uInkFill = { value: INK_FILL };
+      shader.uniforms.uInkShade = { value: INK_SHADE };
+      shader.fragmentShader = inkFragment(shader.fragmentShader);
+    };
+    material.customProgramCacheKey = () => "anywidgets-ink";
+  }
+
+  // lab.ts
+  function labChrome(options) {
+    const group = new THREE.Group();
+    const { palette } = options;
+    if (options.showAxes) {
+      const axisMaterial = new THREE.LineBasicMaterial({ color: palette.edge });
+      for (const end of [[1.2, 0, 0], [0, 1.2, 0], [0, 0, 1.2]]) {
+        const geometry = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), new THREE.Vector3(end[0], end[1], end[2])]);
+        group.add(new THREE.Line(geometry, axisMaterial));
+      }
+      const label = (text, position) => {
+        const sprite = axisLabel(text, palette.other);
+        if (sprite) {
+          sprite.position.set(...position);
+          group.add(sprite);
+        }
+      };
+      label(options.labels.x || "X", [1.32, 0, 0]);
+      label(options.labels.y || "Y", [0, 1.32, 0]);
+      label(options.labels.z || "Z", [0, 0, 1.32]);
+    }
+    if (options.showGrid) {
+      const base = options.background || palette.background;
+      group.add(new THREE.GridHelper(2, options.divisions || 10, mixOver(palette.edge, base, 0.7), mixOver(palette.edge, base, 0.4)));
+    }
+    return group;
+  }
+  function axisLabel(text, color) {
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+    canvas.width = 128;
+    canvas.height = 32;
+    ctx.font = '500 22px "JetBrains Mono", ui-monospace, monospace';
+    ctx.fillStyle = color;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(text, 64, 16);
+    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(canvas), depthTest: false }));
+    sprite.scale.set(0.26, 0.065, 1);
+    return sprite;
   }
 
   // canvas.ts
@@ -193,7 +275,8 @@
   }
   var container = document.getElementById("container");
   var scene = new THREE.Scene();
-  scene.background = new THREE.Color(OPTIONS.background || "#1a1a2e");
+  var background = OPTIONS.background || opts.palette.background;
+  scene.background = new THREE.Color(background);
   var width = container.clientWidth;
   var height = container.clientHeight;
   var camera = new THREE.PerspectiveCamera(60, width / height, 0.01, 1e3);
@@ -210,40 +293,22 @@
   var controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
   controls.dampingFactor = 0.05;
-  if (OPTIONS.show_axes) {
-    let addAxisLabel2 = function(text, position, color) {
-      const canvas = document.createElement("canvas");
-      const ctx = canvas.getContext("2d");
-      canvas.width = 64;
-      canvas.height = 32;
-      ctx.font = "bold 24px Arial";
-      ctx.fillStyle = "#" + color.toString(16).padStart(6, "0");
-      ctx.textAlign = "center";
-      ctx.fillText(text, 32, 24);
-      const texture = new THREE.CanvasTexture(canvas);
-      const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture }));
-      sprite.position.set(position[0], position[1], position[2]);
-      sprite.scale.set(0.25, 0.125, 1);
-      scene.add(sprite);
-    };
-    addAxisLabel = addAxisLabel2;
-    const axes = new THREE.AxesHelper(1.2);
-    scene.add(axes);
-    const labels = OPTIONS.axis_labels || { x: "X", y: "Y", z: "Z" };
-    addAxisLabel2(labels.x || "X", [1.3, 0, 0], 16729156);
-    addAxisLabel2(labels.y || "Y", [0, 1.3, 0], 4521796);
-    addAxisLabel2(labels.z || "Z", [0, 0, 1.3], 4474111);
-  }
-  var addAxisLabel;
-  if (OPTIONS.show_grid) {
-    const gridHelper = new THREE.GridHelper(2, 10, 4473924, 3355443);
-    scene.add(gridHelper);
-  }
+  scene.add(
+    labChrome({
+      showAxes: Boolean(OPTIONS.show_axes),
+      showGrid: Boolean(OPTIONS.show_grid),
+      labels: OPTIONS.axis_labels || {},
+      divisions: OPTIONS.grid_divisions || 10,
+      palette: opts.palette,
+      background
+    })
+  );
   var pointsGroup = new THREE.Group();
   scene.add(pointsGroup);
   if (DATA.length > 0) {
     const geometry = new THREE.SphereGeometry(1, 16, 16);
     const material = new THREE.MeshPhongMaterial({ color: 16777215 });
+    applyInk(material, { value: new THREE.Color(background) });
     const mesh = new THREE.InstancedMesh(geometry, material, DATA.length);
     const matrix = new THREE.Matrix4();
     DATA.forEach((point, idx) => {
@@ -260,6 +325,9 @@
     const distance = fitDistance(DATA.map((p) => ({ x: p.x ?? 0, y: p.y ?? 0, z: p.z ?? 0 })), center, camera.fov, camera.aspect) || 2;
     controls.target.copy(center);
     camera.position.copy(center.clone().add(new THREE.Vector3(0.6, 0.5, 0.8).normalize().multiplyScalar(distance)));
+    camera.near = Math.max(0.01, distance * 1e-3);
+    camera.far = Math.max(1e3, distance * 10);
+    camera.updateProjectionMatrix();
     controls.update();
   }
   var tooltipEl = document.getElementById("tooltip");

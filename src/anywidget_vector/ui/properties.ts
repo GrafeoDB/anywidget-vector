@@ -26,11 +26,9 @@ export function createPropertiesPanel(model: WidgetModel, callbacks: PanelCallba
   content.className = "avs-properties-content";
   inner.appendChild(content);
 
-  // Initial state
-  showEmpty(content);
-
-  // Update on selection change
-  model.on("change:selected_points", () => {
+  // The selection's details: at mount (a selection the host set before the view), and whenever the selection or the
+  // points change
+  const showSelection = () => {
     const selectedIds = (model.get("selected_points") ?? []) as string[];
     const points = (model.get("points") ?? []) as PointData[];
     if (selectedIds.length === 0) {
@@ -45,7 +43,10 @@ export function createPropertiesPanel(model: WidgetModel, callbacks: PanelCallba
     } else {
       showMultipleSelection(content, selectedIds.length);
     }
-  });
+  };
+  showSelection();
+  model.on("change:selected_points", showSelection);
+  model.on("change:points", showSelection);
 
   return {
     element: panel,
