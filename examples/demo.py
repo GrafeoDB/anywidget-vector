@@ -1,5 +1,5 @@
 # /// script
-# requires-python = ">=3.12"
+# requires-python = ">=3.13"
 # dependencies = [
 #     "anywidget-vector==0.2.0",
 #     "marimo",

@@ -16,7 +16,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.12", "3.13", "3.14", "3.15"]
+        python-version: ["3.13", "3.14", "3.15"]
     steps:
       - uses: actions/checkout@v7
 
@@ -56,10 +56,13 @@ jobs:
         run: |
           if [ "${{ matrix.release }}" = "pinned" ]; then
             version=$(sed -n 's/^export const GRAFEO_WASM_VERSION = "\(.*\)";$/\1/p' src/anywidget_vector/backends/grafeo/embed.ts)
+            datasets=$(sed -n 's/^export const GRAFEO_DATASETS_VERSION = "\(.*\)";$/\1/p' src/anywidget_vector/backends/grafeo/embed.ts)
           else
             version=$(npm view @grafeo-db/wasm versions --json | node -e 'const v = JSON.parse(require("fs").readFileSync(0, "utf8")); console.log([].concat(v).pop())')
+            datasets=$(npm view @grafeo-db/datasets version)
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "datasets=$datasets" >> "$GITHUB_OUTPUT"
 
       - name: Download @grafeo-db/wasm@${{ steps.version.outputs.version }}
         run: |
@@ -68,5 +71,12 @@ jobs:
           npm pack "@grafeo-db/wasm@${{ steps.version.outputs.version }}"
           tar -xzf grafeo-db-wasm-*.tgz
 
+      - name: Download @grafeo-db/datasets@${{ steps.version.outputs.datasets }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/datasets"
+          cd "$RUNNER_TEMP/datasets"
+          npm pack "@grafeo-db/datasets@${{ steps.version.outputs.datasets }}"
+          tar -xzf grafeo-db-datasets-*.tgz
+
       - name: Run smoke test
-        run: node tests/js/wasm_smoke.ts "$RUNNER_TEMP/wasm/package"
+        run: node tests/js/wasm_smoke.ts "$RUNNER_TEMP/wasm/package" "$RUNNER_TEMP/datasets/package"

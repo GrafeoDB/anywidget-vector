@@ -50,6 +50,16 @@ def _wasm_version() -> str:
     return match.group(1)
 
 
+def _datasets_version() -> str:
+    match = re.search(
+        r'^export const GRAFEO_DATASETS_VERSION = "([^"]+)";$',
+        (PACKAGE / "backends" / "grafeo" / "embed.ts").read_text(encoding="utf-8"),
+        re.MULTILINE,
+    )
+    assert match, "GRAFEO_DATASETS_VERSION is not defined in backends/grafeo/embed.ts"
+    return match.group(1)
+
+
 def _run_node(*args: str) -> str:
     assert NODE is not None
     proc = subprocess.run([NODE, *args], capture_output=True, text=True, encoding="utf-8", cwd=ROOT, check=False)
@@ -66,10 +76,11 @@ class TestBundleStructure:
         assert esm.count("export ") == 1
 
     def test_the_module_loads_no_code_from_a_cdn(self, esm):
-        # Three.js is bundled; the only remote code is the Grafeo WASM engine, loaded in WASM mode
+        # Three.js is bundled; the only remote code is the Grafeo WASM engine and, for demo_vector(), the
+        # Silicon Valley dataset, both loaded in WASM mode
         assert "https://esm.sh" not in esm
         assert not re.search(r"""\bimport\s*(?:[\w{}*\s,]+from\s*)?["']https?://""", esm)
-        assert re.findall(r"https://cdn\.[\w./-]+", esm) == ["https://cdn.jsdelivr.net/npm/"]
+        assert re.findall(r"https://cdn\.[\w./-]+", esm) == ["https://cdn.jsdelivr.net/npm/"] * 2
 
     def test_get_esm_top_level_names_unique(self, esm):
         # The vendored bundle is one `var` (its GLSL strings hold lines such as `const float ...`)
@@ -195,6 +206,27 @@ class TestWasmPin:
         assert Version(npm) == Version(pypi)
 
 
+class TestDatasetsPin:
+    def test_datasets_package_referenced_once(self, esm):
+        assert esm.count("@grafeo-db/datasets@") == 1
+        cdn_re = (
+            r"\b(?:var|const) GRAFEO_DATASETS_CDN = "
+            r"`https://cdn\.jsdelivr\.net/npm/@grafeo-db/datasets@\$\{GRAFEO_DATASETS_VERSION\}`;"
+        )
+        assert re.search(cdn_re, esm)
+        assert re.fullmatch(r"\d+\.\d+\.\d+", _datasets_version())
+
+    def test_datasets_version_in_lockstep_with_demo_extra(self):
+        project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]
+        extras = project["optional-dependencies"]
+        (pin,) = [r for r in extras["demo"] if Requirement(r).name == "grafeo-datasets"]
+        assert pin in extras["dev"], "the dev extra should test the same grafeo-datasets range"
+        lower = [spec.version for spec in Requirement(pin).specifier if spec.operator == ">="]
+        assert lower == [_datasets_version()], (
+            "bump GRAFEO_DATASETS_VERSION in backends/grafeo/embed.ts together with the demo extra"
+        )
+
+
 def _backend_harness(test_code: str) -> str:
     """The shipped backend and query modules (imported as .ts), aliased like render() calls them, plus test code."""
     embed = json.dumps(_src_uri("backends", "grafeo", "embed.ts"))
@@ -212,6 +244,7 @@ const grafeoEmbedToPoints = grafeoEmbed.toPoints;
 const loadWasmBindings = grafeoEmbed.loadWasmBindings;
 const wasmBindingsKey = grafeoEmbed.wasmBindingsKey;
 const GRAFEO_WASM_CDN = grafeoEmbed.GRAFEO_WASM_CDN;
+const grafeoEmbedLoadDemo = grafeoEmbed.loadDemo;
 const grafeoServerExecute = grafeoServer.executeQuery;
 const grafeoServerToPoints = grafeoServer.toPoints;
 // === test ===
@@ -410,6 +443,62 @@ console.log(JSON.stringify({ created, connected: grafeoEmbedIsConnected() }));
         )
         assert json.loads(out) == {"created": 1, "connected": True}
 
+    @staticmethod
+    def _fake_datasets(tmp_path: Path, body: str) -> str:
+        folder = tmp_path / "datasets" / "dist" / "silicon-valley"
+        folder.mkdir(parents=True)
+        (folder / "gql-with-vectors.js").write_text(body, encoding="utf-8")
+        return (tmp_path / "datasets").as_uri()
+
+    def test_demo_dataset_loads_once_then_the_positions(self, tmp_path):
+        base = json.dumps(self._fake_datasets(tmp_path, 'export const statements = ["INSERT a", "INSERT b"];'))
+        out = run_node_module(
+            _backend_harness(
+                f"""
+const log = [];
+class FakeDatabase {{ execute(q) {{ log.push(q); return []; }} free() {{ log.push("free"); }} }}
+globalThis[wasmBindingsKey(GRAFEO_WASM_CDN)] = Promise.resolve({{ Database: FakeDatabase }});
+await grafeoEmbedConnect();
+await Promise.all([grafeoEmbedLoadDemo(["SET p"], {base}), grafeoEmbedLoadDemo(["SET p"], {base})]);
+await grafeoEmbedLoadDemo(["SET p"], {base});
+console.log(JSON.stringify(log));
+"""
+            ),
+            tmp_path,
+        )
+        assert json.loads(out) == ["INSERT a", "INSERT b", "SET p"]
+
+    def test_demo_load_that_fails_partway_starts_over_on_an_empty_database(self, tmp_path):
+        base = json.dumps(self._fake_datasets(tmp_path, 'export const statements = ["INSERT a", "BAD", "INSERT c"];'))
+        out = run_node_module(
+            _backend_harness(
+                f"""
+const log = [];
+let created = 0;
+let fail = true;
+class FakeDatabase {{
+  constructor() {{ this.n = ++created; }}
+  execute(q) {{ if (q === "BAD" && fail) throw new Error("boom"); log.push(this.n + ":" + q); return []; }}
+  free() {{ log.push(this.n + ":free"); }}
+}}
+globalThis[wasmBindingsKey(GRAFEO_WASM_CDN)] = Promise.resolve({{ Database: FakeDatabase }});
+await grafeoEmbedConnect();
+const error = await grafeoEmbedLoadDemo([], {base}).then(() => null, (e) => e.message);
+const afterFailure = grafeoEmbedIsConnected();
+fail = false;
+await grafeoEmbedConnect();
+await grafeoEmbedLoadDemo([], {base});
+console.log(JSON.stringify({{ error, afterFailure, log }}));
+"""
+            ),
+            tmp_path,
+        )
+        assert json.loads(out) == {
+            "error": "boom",
+            "afterFailure": False,
+            "log": ["1:INSERT a", "1:free", "2:INSERT a", "2:BAD", "2:INSERT c"],
+        }
+
     @pytest.mark.parametrize("content_type", ["application/wasm", "application/octet-stream"])
     def test_wasm_loader_wires_glue_and_binary(self, tmp_path, content_type):
         """The bundler-target wiring: import the glue, instantiate the binary, hand exports to the glue."""
@@ -543,7 +632,7 @@ class TestVendoredThree:
 
     def test_vendor_licenses_are_shipped(self):
         licenses = (PACKAGE / "ui" / "vendor" / "three.LICENSES.txt").read_text(encoding="utf-8")
-        assert "== three@0.186.1 (MIT)" in licenses
+        assert "== three@0.187.0 (MIT)" in licenses
 
     @needs_node
     def test_every_three_name_the_code_uses_is_bundled(self, tmp_path):

@@ -16,7 +16,7 @@
   "devDependencies": {
     "@types/jsdom": "30.0.0",
     "@types/node": "26.6.6",
-    "@types/three": "0.186.0",
+    "@types/three": "0.187.0",
     "esbuild": "0.28.2",
     "typescript": "7.0.2"
   }

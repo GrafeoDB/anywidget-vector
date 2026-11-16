@@ -1,8 +1,8 @@
 // Smoke test of the browser-side Grafeo backend (backends/grafeo/embed.ts)
 // against a real, unpacked @grafeo-db/wasm package.
 //
-//   npm pack @grafeo-db/wasm@0.6.0 && tar -xzf grafeo-db-wasm-0.6.0.tgz
-//   node tests/js/wasm_smoke.ts package
+//   npm pack @grafeo-db/wasm@<version> && tar -xzf grafeo-db-wasm-<version>.tgz
+//   node tests/js/wasm_smoke.ts package [unpacked @grafeo-db/datasets package]
 //
 // It runs the same loader the widget uses in the browser (glue import plus
 // manual instantiation of the bundler-target binary), then the vector search
@@ -33,9 +33,8 @@ function check(condition: unknown, message: string): void {
   if (!condition) failures += 1;
 }
 
-// Primes the bindings cache that connect() uses, from the local package
-await embed.loadWasmBindings(pathToFileURL(pkgDir).href);
-await embed.connect();
+// Loads the bindings from the local package instead of the CDN
+await embed.connect(pathToFileURL(pkgDir).href);
 check(embed.isConnected(), "connect() creates a database");
 
 const run = (query: string, config: Record<string, unknown> = {}) => embed.executeQuery(query, config);
@@ -103,6 +102,35 @@ check(embed.toPoints(await run(search)).length === 3, "the database keeps answer
 
 await embed.disconnect();
 check(!embed.isConnected(), "disconnect() frees the database");
+
+// With an unpacked @grafeo-db/datasets package as the second argument: the demo_vector() flow
+const datasetsDir = process.argv[3];
+if (datasetsDir) {
+  const dsPkg = JSON.parse(await readFile(path.join(path.resolve(datasetsDir), "package.json"), "utf8"));
+  console.log(`@grafeo-db/datasets ${dsPkg.version} (widget pins ${embed.GRAFEO_DATASETS_VERSION})`);
+  await embed.connect(pathToFileURL(pkgDir).href);
+  // As demo.py's _demo_statements() writes them: a float with an exponent, and the category
+  const positions = [
+    "MATCH (n:Technology {key: 'middle-out'}) SET n.x = 1.5e-1, n.y = -2.5e-1, n.z = 3.0e-1, n.category = 'Technology'",
+  ];
+  const datasetsUrl = pathToFileURL(path.resolve(datasetsDir)).href;
+  await Promise.all([embed.loadDemo(positions, datasetsUrl), embed.loadDemo(positions, datasetsUrl)]);
+  check(embed.toPoints(await run("MATCH (n) RETURN n")).length === 64, "the demo loads the 64 nodes once");
+  // demo.py's DEMO_QUERY (tests/test_widget_robustness.py checks that the two match)
+  const demoQuery =
+    "MATCH (m {key: 'middle-out'}), (n) " +
+    "RETURN n, cosine_distance(n.embedding, m.embedding) AS distance ORDER BY distance LIMIT 12";
+  const near = embed.toPoints(await run(demoQuery));
+  check(near.length === 12, `the demo query returns 12 points (got ${near.length})`);
+  check(near[0]?.name === "Middle-out compression" && Math.abs(near[0]?.distance as number) < 1e-6, "middle-out first");
+  check(near[1]?.name === "Pied Piper platform", `its nearest neighbour is Pied Piper platform (got ${near[1]?.name})`);
+  check(
+    near[0]?.x === 0.15 && near[0]?.y === -0.25 && near[0]?.z === 0.3 && near[0]?.category === "Technology",
+    "the demo positions and category win over the embedding's first components",
+  );
+  check(near.every((p: any) => (p.vector as number[]).length === 384), "the embeddings arrive with 384 dimensions");
+  await embed.disconnect();
+}
 
 if (failures > 0) {
   console.error(`${failures} check(s) failed`);

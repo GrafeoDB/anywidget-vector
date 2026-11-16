@@ -7,8 +7,12 @@ import type { BackendConfig, PointData } from "../../ui/types.ts";
 
 // The only place the browser engine version is set. Keep it exact and in
 // lockstep with the `grafeo` Python extra in pyproject.toml.
-export const GRAFEO_WASM_VERSION = "0.6.2";
+export const GRAFEO_WASM_VERSION = "0.6.3";
 export const GRAFEO_WASM_CDN = `https://cdn.jsdelivr.net/npm/@grafeo-db/wasm@${GRAFEO_WASM_VERSION}`;
+
+// The Silicon Valley dataset demo_vector() loads, pinned the same way and in lockstep with the `demo` extra
+export const GRAFEO_DATASETS_VERSION = "0.6.3";
+export const GRAFEO_DATASETS_CDN = `https://cdn.jsdelivr.net/npm/@grafeo-db/datasets@${GRAFEO_DATASETS_VERSION}`;
 
 interface WasmDatabase {
   free(): void;
@@ -18,6 +22,8 @@ interface WasmDatabase {
 
 let wasmDb: WasmDatabase | null = null;
 let connecting: Promise<void> | null = null;
+// The demo dataset, loaded once into the current database
+let demoLoading: Promise<void> | null = null;
 
 /**
  * Where the page keeps the loading promise for one glue module. A page can hold several copies of the widget
@@ -38,7 +44,7 @@ export function wasmBindingsKey(baseUrl: string): symbol {
  * fails). The JS glue is imported directly and the binary is instantiated
  * here with the glue as its import object.
  *
- * `baseUrl` exists for tests/js/wasm_smoke.mjs, which loads a local package.
+ * `baseUrl` exists for tests/js/wasm_smoke.ts, which loads a local package.
  */
 export function loadWasmBindings(baseUrl: string = GRAFEO_WASM_CDN): Promise<any> {
   const key = wasmBindingsKey(baseUrl);
@@ -69,13 +75,15 @@ export function loadWasmBindings(baseUrl: string = GRAFEO_WASM_CDN): Promise<any
 
 /**
  * Initialize Grafeo WASM database.
+ *
+ * `baseUrl` is passed to loadWasmBindings(); the bindings are cached per URL.
  */
-export async function connect() {
+export async function connect(baseUrl: string = GRAFEO_WASM_CDN) {
   if (wasmDb) return true;
   // Queries started while the bindings load share one Database instead of each creating one
   connecting ??= (async () => {
     try {
-      const bindings = await loadWasmBindings();
+      const bindings = await loadWasmBindings(baseUrl);
       wasmDb ??= new bindings.Database();
     } finally {
       connecting = null;
@@ -89,6 +97,7 @@ export async function connect() {
  * Close the WASM database.
  */
 export async function disconnect() {
+  demoLoading = null;
   if (wasmDb) {
     try {
       wasmDb.free();
@@ -118,6 +127,30 @@ export async function executeQuery(query: string, config?: BackendConfig): Promi
     return wasmDb.executeWithLanguage(query, language);
   }
   return wasmDb.execute(query);
+}
+
+/**
+ * Load the Silicon Valley dataset with its embeddings into the database, then run `extra` (the positions
+ * demo_vector() computed), once per database: later calls, also from other widgets on the page, wait for the
+ * same load. A load that fails partway frees the database, so a retry starts from an empty one instead of
+ * adding the nodes twice.
+ *
+ * `baseUrl` exists for tests/js/wasm_smoke.ts, which loads a local package.
+ */
+export function loadDemo(extra: string[], baseUrl: string = GRAFEO_DATASETS_CDN): Promise<void> {
+  demoLoading ??= (async () => {
+    try {
+      if (!wasmDb) throw new Error("WASM database not initialized");
+      const { statements } = (await import(`${baseUrl}/dist/silicon-valley/gql-with-vectors.js`)) as {
+        statements: string[];
+      };
+      for (const statement of [...statements, ...extra]) wasmDb.execute(statement);
+    } catch (err) {
+      await disconnect();
+      throw err;
+    }
+  })();
+  return demoLoading;
 }
 
 /**

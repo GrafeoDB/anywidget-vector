@@ -128,13 +128,6 @@ function render({ model: widgetModel, el }: { model: WidgetModel; el: HTMLElemen
   async function runQuery() {
     const query = model.get("query_input") || "";
 
-    // Apply hard client-side filter (completely hide non-matching)
-    if (canvas) {
-      const result = canvas.applyFilter(query, true);
-      if (toolbarUI) toolbarUI.setFilterCount(result.matched, result.total);
-    }
-
-    // Additionally run a backend query if connected
     const backend = model.get("backend");
     const backendInfo = lookupBackend(backend);
     const mode = model.get("grafeo_connection_mode") || "embedded";
@@ -145,7 +138,12 @@ function render({ model: widgetModel, el }: { model: WidgetModel; el: HTMLElemen
     const hasBackend = isBrowserSide || status === "connected";
 
     if (!hasBackend) {
-      // With points, Run filtered them above; with none, say why nothing happens (the empty note suggests a query)
+      // With no backend, Run hides the points the text does not match (a backend query replaces them instead, so
+      // its text is not a filter); with no points, say why nothing happens (the empty note suggests a query)
+      if (canvas) {
+        const result = canvas.applyFilter(query, true);
+        if (toolbarUI) toolbarUI.setFilterCount(result.matched, result.total);
+      }
       if ((model.get("points") ?? []).length === 0) {
         // Through null first, so the banner shows again after it was closed
         model.set("query_error", null);

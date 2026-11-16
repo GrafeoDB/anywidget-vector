@@ -22,6 +22,14 @@ export function isLatestQuery(model: WidgetModel, ticket: number): boolean {
   return latestQuery.get(model) === ticket;
 }
 
+// The statements demo_vector() sends to run after the dataset (a JSON list of GQL strings)
+function demoStatements(model: WidgetModel): string[] {
+  const raw = model.get("_demo_data");
+  if (!raw) return [];
+  const parsed: unknown = JSON.parse(String(raw));
+  return Array.isArray(parsed) ? parsed.map(String) : [];
+}
+
 // Unified query executor
 export async function executeBackendQuery(model: WidgetModel): Promise<PointData[]> {
   const backend = model.get("backend");
@@ -39,6 +47,9 @@ export async function executeBackendQuery(model: WidgetModel): Promise<PointData
   } else if (backend === "grafeo" && mode === "wasm") {
     if (!grafeoEmbed.isConnected()) {
       await grafeoEmbed.connect();
+    }
+    if (model.get("_demo_mode")) {
+      await grafeoEmbed.loadDemo(demoStatements(model));
     }
     response = await grafeoEmbed.executeQuery(query, config);
     points = grafeoEmbed.toPoints(response);

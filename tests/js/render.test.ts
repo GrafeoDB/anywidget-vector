@@ -353,3 +353,56 @@ test("Run with no database and no points says so in the banner", { skip }, async
     cleanup();
   }
 });
+
+test("Run with a backend sends the text as a query and does not filter the shown points by it", { skip }, async () => {
+  const { model, el, cleanup } = await mount({
+    backend: "grafeo",
+    grafeo_connection_mode: "embedded",
+    connection_status: "connected",
+    points: [{ id: "a", label: "alpha", x: 0, y: 0, z: 0 }],
+    query_input: "MATCH (n) RETURN n",
+  });
+  try {
+    el.querySelector<HTMLButtonElement>(".avs-btn-primary")!.click();
+    await new Promise((r) => setTimeout(r, 0));
+    assert.ok(model.values._execute_query, "the query went to Python");
+    assert.equal(el.querySelector<HTMLElement>(".avs-filter-count")!.style.display, "none", "no 0/1 count");
+  } finally {
+    cleanup();
+  }
+});
+
+test("Run with no backend filters the points by the text and counts the matches", { skip }, async () => {
+  const { el, cleanup } = await mount({
+    backend: "grafeo",
+    grafeo_connection_mode: "embedded",
+    connection_status: "disconnected",
+    points: [
+      { id: "a", label: "alpha", x: 0, y: 0, z: 0 },
+      { id: "b", label: "beta", x: 1, y: 1, z: 1 },
+    ],
+    query_input: "alpha",
+  });
+  try {
+    el.querySelector<HTMLButtonElement>(".avs-btn-primary")!.click();
+    await new Promise((r) => setTimeout(r, 0));
+    const count = el.querySelector<HTMLElement>(".avs-filter-count")!;
+    assert.equal(count.style.display, "");
+    assert.equal(count.textContent, "1/2");
+  } finally {
+    cleanup();
+  }
+});
+
+test("the explorer names the Grafeo mode the queries run in", { skip }, async () => {
+  const { model, el, cleanup } = await mount({ backend: "grafeo", grafeo_connection_mode: "wasm" });
+  try {
+    const note = () => el.querySelector(".avs-collections-list .avs-note")?.textContent;
+    assert.equal(note(), "Grafeo WASM, in the browser");
+    model.values.grafeo_connection_mode = "server";
+    model.emit("change:grafeo_connection_mode");
+    assert.equal(note(), "Grafeo server");
+  } finally {
+    cleanup();
+  }
+});

@@ -1,7 +1,9 @@
 """Demo module for anywidget-vector.
 
-Creates a pre-populated vector space widget with emoji embeddings.
-Renders immediately without any backend setup: just filter and explore.
+Shows the 64 nodes of grafeo's Silicon Valley demo dataset (people, companies, products, technologies, AI,
+places, cities and events from the HBO series), placed in 3D by a PCA of their MiniLM description embeddings, so
+nodes with similar descriptions sit near each other. The points render without any backend; the toolbar's query
+runs in the browser on Grafeo WASM, which loads the same dataset from the jsDelivr CDN on the first Run.
 
 Usage:
     uv add "anywidget-vector[demo]"
@@ -12,85 +14,83 @@ Usage:
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
-from anywidget_vector.widget import VectorSpace
+from anywidget_vector.widget import VectorSpace, _pca
 
-# Emoji embeddings in 3D space, grouped into semantic clusters.
-# Coordinates place similar emojis near each other, forming
-# visually distinct clusters when colored by category.
-DEMO_POINTS: list[dict[str, Any]] = [
-    # Faces cluster (centered around x=2.5, y=0, z=0)
-    {"id": "grinning", "label": "\U0001f600 grinning", "category": "faces", "x": 2.6, "y": 0.2, "z": 0.1},
-    {"id": "laughing", "label": "\U0001f602 tears of joy", "category": "faces", "x": 2.8, "y": -0.1, "z": -0.1},
-    {"id": "heart_eyes", "label": "\U0001f60d heart eyes", "category": "faces", "x": 2.3, "y": 0.4, "z": 0.3},
-    {"id": "thinking", "label": "\U0001f914 thinking", "category": "faces", "x": 2.4, "y": -0.3, "z": -0.2},
-    {"id": "sunglasses", "label": "\U0001f60e sunglasses", "category": "faces", "x": 2.7, "y": 0.1, "z": -0.3},
-    {"id": "wink", "label": "\U0001f609 wink", "category": "faces", "x": 2.5, "y": 0.3, "z": 0.2},
-    {"id": "sleeping", "label": "\U0001f634 sleeping", "category": "faces", "x": 2.2, "y": -0.4, "z": 0.4},
-    {"id": "mind_blown", "label": "\U0001f92f mind blown", "category": "faces", "x": 2.9, "y": 0.0, "z": -0.4},
-    {"id": "nerd", "label": "\U0001f913 nerd", "category": "faces", "x": 2.4, "y": -0.2, "z": 0.0},
-    # Animals cluster (centered around x=-2, y=2, z=0)
-    {"id": "cat", "label": "\U0001f431 cat", "category": "animals", "x": -1.9, "y": 2.2, "z": 0.1},
-    {"id": "dog", "label": "\U0001f436 dog", "category": "animals", "x": -2.2, "y": 1.8, "z": -0.2},
-    {"id": "unicorn", "label": "\U0001f984 unicorn", "category": "animals", "x": -1.7, "y": 2.5, "z": 0.4},
-    {"id": "butterfly", "label": "\U0001f98b butterfly", "category": "animals", "x": -2.3, "y": 2.1, "z": 0.3},
-    {"id": "dolphin", "label": "\U0001f42c dolphin", "category": "animals", "x": -1.8, "y": 2.4, "z": -0.3},
-    {"id": "owl", "label": "\U0001f989 owl", "category": "animals", "x": -2.1, "y": 1.9, "z": 0.2},
-    {"id": "penguin", "label": "\U0001f427 penguin", "category": "animals", "x": -2.4, "y": 2.3, "z": -0.1},
-    {"id": "octopus", "label": "\U0001f419 octopus", "category": "animals", "x": -1.6, "y": 2.0, "z": -0.4},
-    {"id": "fox", "label": "\U0001f98a fox", "category": "animals", "x": -2.0, "y": 2.6, "z": 0.0},
-    # Food cluster (centered around x=-2, y=-2, z=0)
-    {"id": "pizza", "label": "\U0001f355 pizza", "category": "food", "x": -2.1, "y": -1.8, "z": 0.2},
-    {"id": "sushi", "label": "\U0001f363 sushi", "category": "food", "x": -1.8, "y": -2.2, "z": -0.1},
-    {"id": "taco", "label": "\U0001f32e taco", "category": "food", "x": -2.3, "y": -1.9, "z": 0.3},
-    {"id": "ramen", "label": "\U0001f35c ramen", "category": "food", "x": -1.9, "y": -2.4, "z": -0.2},
-    {"id": "ice_cream", "label": "\U0001f366 ice cream", "category": "food", "x": -2.2, "y": -2.1, "z": 0.4},
-    {"id": "avocado", "label": "\U0001f951 avocado", "category": "food", "x": -1.7, "y": -1.7, "z": -0.3},
-    {"id": "cake", "label": "\U0001f370 cake", "category": "food", "x": -2.4, "y": -2.3, "z": 0.1},
-    {"id": "coffee", "label": "\u2615 coffee", "category": "food", "x": -2.0, "y": -2.0, "z": -0.4},
-    # Nature cluster (centered around x=0, y=0, z=2.5)
-    {"id": "sun", "label": "\u2600\ufe0f sun", "category": "nature", "x": 0.2, "y": 0.1, "z": 2.6},
-    {"id": "rainbow", "label": "\U0001f308 rainbow", "category": "nature", "x": -0.1, "y": 0.3, "z": 2.8},
-    {"id": "snowflake", "label": "\u2744\ufe0f snowflake", "category": "nature", "x": 0.3, "y": -0.2, "z": 2.3},
-    {"id": "fire", "label": "\U0001f525 fire", "category": "nature", "x": -0.2, "y": 0.4, "z": 2.5},
-    {"id": "lightning", "label": "\u26a1 lightning", "category": "nature", "x": 0.4, "y": -0.1, "z": 2.7},
-    {"id": "ocean", "label": "\U0001f30a ocean wave", "category": "nature", "x": -0.3, "y": -0.3, "z": 2.4},
-    {"id": "tree", "label": "\U0001f333 tree", "category": "nature", "x": 0.1, "y": 0.2, "z": 2.2},
-    {"id": "star", "label": "\u2b50 star", "category": "nature", "x": 0.0, "y": -0.4, "z": 2.9},
-    # Travel cluster (centered around x=0, y=0, z=-2.5)
-    {"id": "rocket", "label": "\U0001f680 rocket", "category": "travel", "x": 0.2, "y": 0.1, "z": -2.6},
-    {"id": "airplane", "label": "\u2708\ufe0f airplane", "category": "travel", "x": -0.1, "y": 0.3, "z": -2.3},
-    {"id": "ship", "label": "\U0001f6a2 ship", "category": "travel", "x": 0.3, "y": -0.2, "z": -2.8},
-    {"id": "car", "label": "\U0001f697 car", "category": "travel", "x": -0.2, "y": -0.1, "z": -2.4},
-    {"id": "bike", "label": "\U0001f6b2 bicycle", "category": "travel", "x": 0.4, "y": 0.2, "z": -2.5},
-    {"id": "train", "label": "\U0001f682 train", "category": "travel", "x": -0.3, "y": 0.4, "z": -2.7},
-    {"id": "globe", "label": "\U0001f30d globe", "category": "travel", "x": 0.1, "y": -0.3, "z": -2.2},
-    # Sports cluster (centered around x=2, y=-2, z=0)
-    {"id": "soccer", "label": "\u26bd soccer", "category": "sports", "x": 2.1, "y": -1.8, "z": 0.2},
-    {"id": "basketball", "label": "\U0001f3c0 basketball", "category": "sports", "x": 2.3, "y": -2.2, "z": -0.1},
-    {"id": "tennis", "label": "\U0001f3be tennis", "category": "sports", "x": 1.9, "y": -2.1, "z": 0.3},
-    {"id": "surfing", "label": "\U0001f3c4 surfing", "category": "sports", "x": 2.4, "y": -1.9, "z": -0.3},
-    {"id": "skiing", "label": "\u26f7\ufe0f skiing", "category": "sports", "x": 1.8, "y": -2.4, "z": 0.1},
-    {"id": "medal", "label": "\U0001f3c5 medal", "category": "sports", "x": 2.2, "y": -2.0, "z": -0.2},
-    {"id": "trophy", "label": "\U0001f3c6 trophy", "category": "sports", "x": 2.0, "y": -2.3, "z": 0.4},
-    # Music cluster (centered around x=0, y=2.5, z=0)
-    {"id": "guitar", "label": "\U0001f3b8 guitar", "category": "music", "x": 0.2, "y": 2.6, "z": 0.1},
-    {"id": "microphone", "label": "\U0001f3a4 microphone", "category": "music", "x": -0.1, "y": 2.3, "z": -0.2},
-    {"id": "drums", "label": "\U0001f941 drum", "category": "music", "x": 0.3, "y": 2.8, "z": 0.3},
-    {"id": "headphones", "label": "\U0001f3a7 headphones", "category": "music", "x": -0.2, "y": 2.5, "z": -0.1},
-    {"id": "notes", "label": "\U0001f3b5 music notes", "category": "music", "x": 0.1, "y": 2.4, "z": 0.2},
-    {"id": "saxophone", "label": "\U0001f3b7 saxophone", "category": "music", "x": -0.3, "y": 2.7, "z": -0.3},
-    {"id": "violin", "label": "\U0001f3bb violin", "category": "music", "x": 0.4, "y": 2.2, "z": 0.0},
-]
+# The toolbar's starting query: the nodes whose descriptions are nearest to Pied Piper's compression algorithm
+DEMO_QUERY = (
+    "MATCH (m {key: 'middle-out'}), (n) "
+    "RETURN n, cosine_distance(n.embedding, m.embedding) AS distance ORDER BY distance LIMIT 12"
+)
+
+
+def _silicon_valley() -> Any:
+    try:
+        from grafeo_datasets import silicon_valley
+    except ImportError:
+        raise ImportError('The demo needs the demo extra: uv add "anywidget-vector[demo]"') from None
+    return silicon_valley
+
+
+def demo_points() -> list[dict[str, Any]]:
+    """The demo's points: one per node of the Silicon Valley dataset.
+
+    Each point has the node's ``key`` as ``id``, its ``name`` as ``label``, its node label (``Person``,
+    ``Company``, ...) as ``category``, its ``description``, the 384-dimensional embedding of that description
+    as ``vector``, and ``x``, ``y`` and ``z`` from a PCA of all embeddings, scaled to lie within -1 and 1.
+    """
+    import numpy as np
+
+    silicon_valley = _silicon_valley()
+    nodes = silicon_valley.nodes()
+    by_key = silicon_valley.vectors().by_key
+    matrix = np.array([by_key[node["key"]] for node in nodes], dtype=np.float64)
+    coords = _pca(matrix, n_components=3)
+    # SVD leaves each axis's sign open; fix it so the picture is the same on every machine
+    signs = np.sign(coords[np.abs(coords).argmax(axis=0), range(3)])
+    coords = coords * np.where(signs == 0, 1.0, signs)
+    # Fill the widget's grid, which spans -1 to 1 whatever the data (the PCA alone spans about -0.5 to 0.5)
+    coords = coords / np.abs(coords).max()
+    return [
+        {
+            "id": node["key"],
+            "label": node["name"],
+            "category": node["label"],
+            "description": node["description"],
+            "vector": by_key[node["key"]],
+            "x": float(x),
+            "y": float(y),
+            "z": float(z),
+        }
+        for node, (x, y, z) in zip(nodes, coords, strict=True)
+    ]
+
+
+def _demo_statements(points: list[dict[str, Any]]) -> list[str]:
+    """GQL that gives each node in the browser database the point's position and category.
+
+    Run after the dataset's own statements, so query results land where the points are drawn and keep their
+    colours. The exponent makes each number a float; without it GQL reads an exact decimal.
+    """
+    return [
+        f"MATCH (n:{p['category']} {{key: '{p['id']}'}}) "
+        f"SET n.x = {p['x']:.6e}, n.y = {p['y']:.6e}, n.z = {p['z']:.6e}, n.category = '{p['category']}'"
+        for p in points
+    ]
 
 
 def demo_vector(**kwargs: Any) -> VectorSpace:
-    """Create a demo VectorSpace widget with emoji embeddings.
+    """Create a demo VectorSpace widget on the Silicon Valley dataset.
 
-    60+ emojis in 7 categories (faces, animals, food, nature, travel,
-    sports, music) arranged as clusters in 3D space. Type in the
-    filter bar to highlight matching emojis.
+    The 64 nodes are coloured by node label and placed by a PCA of their description embeddings
+    (``Xenova/all-MiniLM-L6-v2``, 384 dimensions). The full embeddings are kept, so ``project("umap")``,
+    ``project("tsne")`` and ``compute_distances(..., vector_field="vector")`` work on the real vectors.
+
+    The toolbar starts with a GQL query for the nodes nearest to middle-out compression. Run sends it to
+    Grafeo WASM in the browser, which loads ``@grafeo-db/wasm`` and ``@grafeo-db/datasets`` from the jsDelivr
+    CDN on the first Run.
 
     Parameters
     ----------
@@ -109,15 +109,26 @@ def demo_vector(**kwargs: Any) -> VectorSpace:
     >>> vs = demo_vector()
     >>> vs  # renders in notebook
     """
+    import numpy as np
+
+    points = demo_points()
     defaults: dict[str, Any] = {
-        "points": DEMO_POINTS,
+        "points": points,
         "width": kwargs.pop("width", 900),
         "height": kwargs.pop("height", 600),
         "backend": "grafeo",
+        "grafeo_connection_mode": "wasm",
+        "query_input": DEMO_QUERY,
         "color_field": "category",
         "show_tooltip": True,
-        "tooltip_fields": ["label", "category", "x", "y", "z"],
+        "tooltip_fields": ["label", "category", "description"],
+        "_demo_mode": True,
+        "_demo_data": json.dumps(_demo_statements(points)),
     }
+    own_points = "points" not in kwargs
     defaults.update(kwargs)
 
-    return VectorSpace(**defaults)
+    widget = VectorSpace(**defaults)
+    if own_points:
+        widget.set_vectors(np.array([p["vector"] for p in points], dtype=np.float64))
+    return widget
