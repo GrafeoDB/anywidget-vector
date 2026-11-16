@@ -1,7 +1,7 @@
 // Smoke test of the browser-side Grafeo backend (backends/grafeo/embed.ts)
 // against a real, unpacked @grafeo-db/wasm package.
 //
-//   npm pack @grafeo-db/wasm@0.6.0 && tar -xzf grafeo-db-wasm-0.6.0.tgz
+//   npm pack @grafeo-db/wasm@<version> && tar -xzf grafeo-db-wasm-<version>.tgz
 //   node tests/js/wasm_smoke.ts package
 //
 // It runs the same loader the widget uses in the browser (glue import plus
@@ -33,9 +33,8 @@ function check(condition: unknown, message: string): void {
   if (!condition) failures += 1;
 }
 
-// Primes the bindings cache that connect() uses, from the local package
-await embed.loadWasmBindings(pathToFileURL(pkgDir).href);
-await embed.connect();
+// Loads the bindings from the local package instead of the CDN
+await embed.connect(pathToFileURL(pkgDir).href);
 check(embed.isConnected(), "connect() creates a database");
 
 const run = (query: string, config: Record<string, unknown> = {}) => embed.executeQuery(query, config);

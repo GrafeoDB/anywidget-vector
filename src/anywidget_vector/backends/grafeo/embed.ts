@@ -7,7 +7,7 @@ import type { BackendConfig, PointData } from "../../ui/types.ts";
 
 // The only place the browser engine version is set. Keep it exact and in
 // lockstep with the `grafeo` Python extra in pyproject.toml.
-export const GRAFEO_WASM_VERSION = "0.6.2";
+export const GRAFEO_WASM_VERSION = "0.6.3";
 export const GRAFEO_WASM_CDN = `https://cdn.jsdelivr.net/npm/@grafeo-db/wasm@${GRAFEO_WASM_VERSION}`;
 
 interface WasmDatabase {
@@ -38,7 +38,7 @@ export function wasmBindingsKey(baseUrl: string): symbol {
  * fails). The JS glue is imported directly and the binary is instantiated
  * here with the glue as its import object.
  *
- * `baseUrl` exists for tests/js/wasm_smoke.mjs, which loads a local package.
+ * `baseUrl` exists for tests/js/wasm_smoke.ts, which loads a local package.
  */
 export function loadWasmBindings(baseUrl: string = GRAFEO_WASM_CDN): Promise<any> {
   const key = wasmBindingsKey(baseUrl);
@@ -69,13 +69,15 @@ export function loadWasmBindings(baseUrl: string = GRAFEO_WASM_CDN): Promise<any
 
 /**
  * Initialize Grafeo WASM database.
+ *
+ * `baseUrl` is passed to loadWasmBindings(); the bindings are cached per URL.
  */
-export async function connect() {
+export async function connect(baseUrl: string = GRAFEO_WASM_CDN) {
   if (wasmDb) return true;
   // Queries started while the bindings load share one Database instead of each creating one
   connecting ??= (async () => {
     try {
-      const bindings = await loadWasmBindings();
+      const bindings = await loadWasmBindings(baseUrl);
       wasmDb ??= new bindings.Database();
     } finally {
       connecting = null;

@@ -2538,7 +2538,7 @@ function toPoints4(response) {
 }
 
 // ../backends/grafeo/embed.ts
-var GRAFEO_WASM_VERSION = "0.6.2";
+var GRAFEO_WASM_VERSION = "0.6.3";
 var GRAFEO_WASM_CDN = `https://cdn.jsdelivr.net/npm/@grafeo-db/wasm@${GRAFEO_WASM_VERSION}`;
 var wasmDb = null;
 var connecting = null;
@@ -2570,11 +2570,11 @@ function loadWasmBindings(baseUrl = GRAFEO_WASM_CDN) {
   }
   return wasmGlobals[key];
 }
-async function connect() {
+async function connect(baseUrl = GRAFEO_WASM_CDN) {
   if (wasmDb) return true;
   connecting ??= (async () => {
     try {
-      const bindings = await loadWasmBindings();
+      const bindings = await loadWasmBindings(baseUrl);
       wasmDb ??= new bindings.Database();
     } finally {
       connecting = null;

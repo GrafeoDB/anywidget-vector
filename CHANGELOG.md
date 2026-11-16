@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.0.1] - Unreleased
+
+Grafeo 0.6.3 release: the Grafeo backend moves to grafeo 0.6.3 in Python and in the browser; the widget itself is unchanged. An environment with the `grafeo` extra upgrades grafeo to 0.6.3 or later; to keep grafeo 0.6.2, stay on anywidget-vector 1.0.0 and pin grafeo.
+
+### Fixed
+
+- **The WASM smoke test loads the package it is given**: `tests/js/wasm_smoke.ts`, also run by the `grafeo-latest` workflow, imported `@grafeo-db/wasm` from jsDelivr instead of the unpacked package and failed in Node. `connect()` in `backends/grafeo/embed.ts` now takes the same base URL as `loadWasmBindings()`.
+
+### Dependencies
+
+- **grafeo 0.6.3** (requires `>=0.6.3,<0.7`): the `grafeo` and `dev` extras need grafeo 0.6.3, and the `wasm` mode loads `@grafeo-db/wasm` 0.6.3 (`GRAFEO_WASM_VERSION` in `backends/grafeo/embed.ts`).
+
 ## [1.0.0] - 2026-11-14
 
 Shared look release: the widget takes the look of the anywidgets family (graphite chrome, ink points, an eight-colour palette), opens framed on the whole cloud and, with no height given, is 16:10 of its width instead of square. No trait, method or CSS variable is removed; to keep a colour, set `color` on a point or the `--avs-*` variables, and pass `height` for a fixed height.
