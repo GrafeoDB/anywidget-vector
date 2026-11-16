@@ -9,7 +9,7 @@ Works with Marimo, Jupyter, VS Code, Colab, anywhere [anywidget](https://anywidg
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/GrafeoDB/anywidget-vector/main/assets/demo-dark.png">
-  <img src="https://raw.githubusercontent.com/GrafeoDB/anywidget-vector/main/assets/demo-light.png" alt="anywidget-vector showing six clusters of embeddings in 3D, coloured by topic, with the explorer open">
+  <img src="https://raw.githubusercontent.com/GrafeoDB/anywidget-vector/main/assets/demo-light.png" alt="anywidget-vector showing the 64 nodes of the Silicon Valley demo dataset in 3D, placed by their description embeddings and coloured by node label, with the explorer open">
 </picture>
 
 ## Features
@@ -26,9 +26,10 @@ Works with Marimo, Jupyter, VS Code, Colab, anywhere [anywidget](https://anywidg
 ```bash
 uv add anywidget-vector
 uv add "anywidget-vector[grafeo]"   # with the embedded Grafeo backend (grafeo 0.6)
+uv add "anywidget-vector[demo]"     # with the Silicon Valley demo dataset
 ```
 
-Requires Python 3.12 or later. The `grafeo` extra installs grafeo 0.6 (`grafeo>=0.6.3,<0.7`); the browser-side WASM mode loads the matching `@grafeo-db/wasm` from a CDN.
+Requires Python 3.13 or later. The `grafeo` extra installs grafeo 0.6 (`grafeo>=0.6.3,<0.7`); the browser-side WASM mode loads the matching `@grafeo-db/wasm` from a CDN.
 
 ## Quick Start
 
@@ -41,6 +42,59 @@ widget = VectorSpace(points=[
     {"id": "c", "x": 0.1, "y": -0.4, "z": 0.6, "label": "Point C", "cluster": 0},
 ])
 
+widget
+```
+
+## Demo
+
+```python
+from anywidget_vector.demo import demo_vector
+
+demo_vector()
+```
+
+The demo shows the 64 nodes of Grafeo's Silicon Valley demo dataset ([`grafeo-datasets`](https://pypi.org/project/grafeo-datasets/)):
+the people, companies, products, technologies, AI, places, cities and events of the HBO series. Each node's
+description is embedded with `Xenova/all-MiniLM-L6-v2` (384 dimensions), and a PCA of those embeddings places it in
+3D, so nodes with similar descriptions sit near each other. Points are coloured by node label, one palette colour
+each. The demo needs the `demo` extra (`grafeo-datasets` and numpy) and renders without a database.
+
+The toolbar starts with a query for the nodes nearest to Pied Piper's middle-out compression:
+
+```
+MATCH (m {key: 'middle-out'}), (n)
+RETURN n, cosine_distance(n.embedding, m.embedding) AS distance ORDER BY distance LIMIT 12
+```
+
+Run sends it to Grafeo WASM in the browser, which loads `@grafeo-db/wasm` and `@grafeo-db/datasets` 0.6.3 from the
+jsDelivr CDN on the first Run (6.8 MB before compression, 0.4 MB of it the dataset, whose 285 statements then load
+in about 0.1 s). The results keep their places and colours. Middle-out compression comes first, at distance 0, then Pied Piper platform (0.66) and Son of Anton (0.75).
+
+The full embeddings stay with the widget, in each point's `vector` and for `project()`:
+
+```python
+vs = demo_vector()
+vs.compute_distances("middle-out", metric="cosine", vector_field="vector")  # {"pied-piper-app": 0.657, ...}
+vs.project("umap")  # needs the projection extra
+```
+
+The same data by hand, from the dataset's Python API:
+
+```python
+import numpy as np
+from grafeo_datasets import silicon_valley
+from anywidget_vector import VectorSpace
+
+nodes = silicon_valley.nodes()
+vectors = silicon_valley.vectors().by_key
+
+widget = VectorSpace(color_field="category")
+widget.add_numpy(
+    np.array([vectors[n["key"]] for n in nodes]),  # 384 columns: PCA to 3D
+    ids=[n["key"] for n in nodes],
+    labels=[n["name"] for n in nodes],
+    metadata={"category": [n["label"] for n in nodes]},
+)
 widget
 ```
 
@@ -358,7 +412,7 @@ credentials in the kernel).
 |------|-------------------|-------|
 | `embedded` (default) | In Python, on a `grafeo.GrafeoDB` | `uv add "anywidget-vector[grafeo]"` and `set_backend("grafeo", client=db)` |
 | `server` | Over HTTP, `POST /query` on [grafeo-server](https://github.com/GrafeoDB/grafeo-server) | `grafeo_server_url="http://localhost:7474"`; start the server with `--cors-origins` so the notebook's origin may call it. Needs grafeo-server 0.6.0 or later (the Grafeo 0.6 engine, which sends decimals as `{"$decimal": "..."}`; the widget turns them into numbers) |
-| `wasm` | In the browser, in-memory | Nothing to install: `@grafeo-db/wasm` 0.6.3 loads from the jsDelivr CDN on the first query (the only code the widget loads from a CDN) |
+| `wasm` | In the browser, in-memory | Nothing to install: `@grafeo-db/wasm` 0.6.3 loads from the jsDelivr CDN on the first query (with `demo_vector()`, `@grafeo-db/datasets` 0.6.3 too; nothing else loads from a CDN) |
 
 ```python
 import grafeo
@@ -403,8 +457,9 @@ The distance metrics of a Grafeo vector index (`cosine`, `euclidean`, `dot_produ
 same values as the widget's `distance_metric` and `compute_distances()`.
 
 The browser engine version is set in one place, `GRAFEO_WASM_VERSION` in
-`src/anywidget_vector/backends/grafeo/embed.ts`, and moves in lockstep with the `grafeo` extra. Before a bump,
-run `node tests/js/wasm_smoke.ts <unpacked @grafeo-db/wasm package>`.
+`src/anywidget_vector/backends/grafeo/embed.ts`, and moves in lockstep with the `grafeo` extra; the demo dataset's,
+`GRAFEO_DATASETS_VERSION` next to it, moves with the `demo` extra. Before a bump, run
+`node tests/js/wasm_smoke.ts <unpacked @grafeo-db/wasm package> <unpacked @grafeo-db/datasets package>`.
 
 Coming from grafeo 0.5: see grafeo's [Upgrading to 0.6](https://docs.grafeo.dev/get-started/upgrading/0.6/).
 

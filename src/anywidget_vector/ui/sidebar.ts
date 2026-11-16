@@ -81,7 +81,7 @@ export function createSidebar(model: WidgetModel, callbacks: PanelCallbacks): Pa
     } else {
       const note = document.createElement("div");
       note.className = "avs-note";
-      note.textContent = backend === "grafeo" ? "Grafeo embedded" : "Configure in settings";
+      note.textContent = backend === "grafeo" ? grafeoModeNote(model.get("grafeo_connection_mode")) : "Configure in settings";
       collectionsList.appendChild(note);
     }
   }
@@ -320,6 +320,7 @@ export function createSidebar(model: WidgetModel, callbacks: PanelCallbacks): Pa
   model.on("change:dark_mode", updateClusters);
   model.on("change:backend_config", updateCollections);
   model.on("change:backend", updateCollections);
+  model.on("change:grafeo_connection_mode", updateCollections);
   model.on("change:selected_points", updateDistanceInfo);
   model.on("change:distance_metric", () => {
     metricSelect.value = model.get("distance_metric") || "euclidean";
@@ -336,6 +337,13 @@ export function createSidebar(model: WidgetModel, callbacks: PanelCallbacks): Pa
 }
 
 // === Helpers ===
+
+/** Where a Grafeo backend without a named collection runs its queries. */
+function grafeoModeNote(mode: unknown): string {
+  if (mode === "wasm") return "Grafeo WASM, in the browser";
+  if (mode === "server") return "Grafeo server";
+  return "Grafeo embedded";
+}
 
 function addStatRow(container: HTMLElement, key: string, value: string | number): void {
   const row = document.createElement("div");

@@ -17,6 +17,9 @@ const result = await build({
   legalComments: "none",
   target: "es2020",
   metafile: true,
+  // Not the widget's tsconfig.json: its `strict` makes esbuild emit "use strict", and a strict script evaluated by
+  // indirect eval keeps its top-level var to itself
+  tsconfigRaw: {},
   outfile: join(out, "three.min.js"),
 });
 

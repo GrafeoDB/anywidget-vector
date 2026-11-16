@@ -4,7 +4,7 @@
 # Extended with anywidget-vector 3D scatter view and 6D dimension mapping.
 #
 # /// script
-# requires-python = ">=3.12"
+# requires-python = ">=3.13"
 # dependencies = [
 #     "marimo",
 #     "polars==1.38.1",

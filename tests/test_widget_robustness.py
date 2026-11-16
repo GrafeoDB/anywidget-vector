@@ -8,6 +8,7 @@ import json
 import math
 import re
 import warnings
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -15,7 +16,7 @@ import pytest
 
 import anywidget_vector
 from anywidget_vector import VectorSpace
-from anywidget_vector.demo import DEMO_POINTS, demo_vector
+from anywidget_vector.demo import DEMO_QUERY, demo_points, demo_vector
 
 
 def _no_nan_json(text: str) -> object:
@@ -302,8 +303,46 @@ class TestPackage:
     def test_demo_vector(self):
         widget = demo_vector()
         assert widget.backend == "grafeo"
-        assert widget.grafeo_connection_mode == "embedded"
-        assert len(widget.points) == len(DEMO_POINTS)
-        assert len({p["id"] for p in widget.points}) == len(DEMO_POINTS)
+        assert widget.grafeo_connection_mode == "wasm"
+        assert widget.query_input == DEMO_QUERY
+        assert len(widget.points) == 64
+        assert len({p["id"] for p in widget.points}) == 64
         assert all(math.isfinite(p[a]) for p in widget.points for a in ("x", "y", "z"))
         assert demo_vector(width=400, color_field="label").width == 400
+
+    def test_demo_points_are_the_silicon_valley_nodes(self):
+        points = demo_points()
+        categories = {p["category"] for p in points}
+        # Eight node labels: one palette colour each, none of them "Other"
+        assert categories == {"Person", "Company", "Product", "Technology", "AI", "Place", "City", "Event"}
+        assert all(len(p["vector"]) == 384 and p["description"] for p in points)
+        assert next(p for p in points if p["id"] == "middle-out")["label"] == "Middle-out compression"
+        assert demo_points() == points, "the PCA's axis signs are fixed, so the picture never mirrors"
+
+    def test_demo_keeps_the_real_embeddings(self):
+        widget = demo_vector()
+        distances = widget.compute_distances("middle-out", metric="cosine", vector_field="vector")
+        nearest = sorted((d, i) for i, d in distances.items() if i != "middle-out")[0][1]
+        assert nearest == "pied-piper-app"  # "Pied Piper platform", as Grafeo WASM ranks it
+        assert widget.project("pca") is widget  # the stored vectors feed project()
+
+    def test_demo_statements_place_every_browser_node_where_its_point_is(self):
+        widget = demo_vector()
+        statements = json.loads(widget._demo_data)
+        assert widget._demo_mode is True
+        assert len(statements) == 64
+        anton = next(p for p in widget.points if p["id"] == "anton")
+        assert statements[0] == (
+            f"MATCH (n:AI {{key: 'anton'}}) SET n.x = {anton['x']:.6e}, n.y = {anton['y']:.6e}, "
+            f"n.z = {anton['z']:.6e}, n.category = 'AI'"
+        )
+
+    def test_demo_query_is_the_one_the_wasm_smoke_test_runs(self):
+        smoke = (Path(__file__).parent / "js" / "wasm_smoke.ts").read_text(encoding="utf-8")
+        match_part, return_part = DEMO_QUERY.split("RETURN ")
+        assert f'"{match_part}"' in smoke
+        assert f'"RETURN {return_part}"' in smoke
+
+    def test_demo_with_points_of_its_own_keeps_them(self):
+        widget = demo_vector(points=[{"id": "a", "x": 0, "y": 0, "z": 0}])
+        assert [p["id"] for p in widget.points] == ["a"]

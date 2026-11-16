@@ -389,7 +389,7 @@ function createSidebar(model, callbacks) {
     } else {
       const note = document.createElement("div");
       note.className = "avs-note";
-      note.textContent = backend === "grafeo" ? "Grafeo embedded" : "Configure in settings";
+      note.textContent = backend === "grafeo" ? grafeoModeNote(model.get("grafeo_connection_mode")) : "Configure in settings";
       collectionsList.appendChild(note);
     }
   }
@@ -580,6 +580,7 @@ function createSidebar(model, callbacks) {
   model.on("change:dark_mode", updateClusters);
   model.on("change:backend_config", updateCollections);
   model.on("change:backend", updateCollections);
+  model.on("change:grafeo_connection_mode", updateCollections);
   model.on("change:selected_points", updateDistanceInfo);
   model.on("change:distance_metric", () => {
     metricSelect.value = model.get("distance_metric") || "euclidean";
@@ -590,6 +591,11 @@ function createSidebar(model, callbacks) {
   updateClusters();
   nameFields(panel);
   return panelControls(panel);
+}
+function grafeoModeNote(mode) {
+  if (mode === "wasm") return "Grafeo WASM, in the browser";
+  if (mode === "server") return "Grafeo server";
+  return "Grafeo embedded";
 }
 function addStatRow(container, key, value) {
   const row = document.createElement("div");
@@ -2540,8 +2546,11 @@ function toPoints4(response) {
 // ../backends/grafeo/embed.ts
 var GRAFEO_WASM_VERSION = "0.6.3";
 var GRAFEO_WASM_CDN = `https://cdn.jsdelivr.net/npm/@grafeo-db/wasm@${GRAFEO_WASM_VERSION}`;
+var GRAFEO_DATASETS_VERSION = "0.6.3";
+var GRAFEO_DATASETS_CDN = `https://cdn.jsdelivr.net/npm/@grafeo-db/datasets@${GRAFEO_DATASETS_VERSION}`;
 var wasmDb = null;
 var connecting = null;
+var demoLoading = null;
 function wasmBindingsKey(baseUrl) {
   return /* @__PURE__ */ Symbol.for(`grafeo-wasm:${baseUrl}/grafeo_wasm_bg.js`);
 }
@@ -2583,6 +2592,16 @@ async function connect(baseUrl = GRAFEO_WASM_CDN) {
   await connecting;
   return true;
 }
+async function disconnect() {
+  demoLoading = null;
+  if (wasmDb) {
+    try {
+      wasmDb.free();
+    } catch (_) {
+    }
+    wasmDb = null;
+  }
+}
 function isConnected() {
   return wasmDb !== null;
 }
@@ -2593,6 +2612,19 @@ async function executeQuery5(query, config) {
     return wasmDb.executeWithLanguage(query, language);
   }
   return wasmDb.execute(query);
+}
+function loadDemo(extra, baseUrl = GRAFEO_DATASETS_CDN) {
+  demoLoading ??= (async () => {
+    try {
+      if (!wasmDb) throw new Error("WASM database not initialized");
+      const { statements } = await import(`${baseUrl}/dist/silicon-valley/gql-with-vectors.js`);
+      for (const statement of [...statements, ...extra]) wasmDb.execute(statement);
+    } catch (err) {
+      await disconnect();
+      throw err;
+    }
+  })();
+  return demoLoading;
 }
 function toPoints5(result) {
   if (!Array.isArray(result)) return [];
@@ -2609,6 +2641,12 @@ function startQuery(model) {
 function isLatestQuery(model, ticket) {
   return latestQuery.get(model) === ticket;
 }
+function demoStatements(model) {
+  const raw = model.get("_demo_data");
+  if (!raw) return [];
+  const parsed2 = JSON.parse(String(raw));
+  return Array.isArray(parsed2) ? parsed2.map(String) : [];
+}
 async function executeBackendQuery(model) {
   const backend = model.get("backend");
   const query = model.get("query_input");
@@ -2623,6 +2661,9 @@ async function executeBackendQuery(model) {
   } else if (backend === "grafeo" && mode === "wasm") {
     if (!isConnected()) {
       await connect();
+    }
+    if (model.get("_demo_mode")) {
+      await loadDemo(demoStatements(model));
     }
     response = await executeQuery5(query, config);
     points = toPoints5(response);
@@ -2733,10 +2774,6 @@ function render({ model: widgetModel, el }) {
   }
   async function runQuery() {
     const query = model.get("query_input") || "";
-    if (canvas) {
-      const result = canvas.applyFilter(query, true);
-      if (toolbarUI) toolbarUI.setFilterCount(result.matched, result.total);
-    }
     const backend = model.get("backend");
     const backendInfo2 = backendInfo(backend);
     const mode = model.get("grafeo_connection_mode") || "embedded";
@@ -2744,6 +2781,10 @@ function render({ model: widgetModel, el }) {
     const isBrowserSide = backendInfo2 && backendInfo2.side === "browser" || backend === "grafeo" && (mode === "server" || mode === "wasm");
     const hasBackend = isBrowserSide || status === "connected";
     if (!hasBackend) {
+      if (canvas) {
+        const result = canvas.applyFilter(query, true);
+        if (toolbarUI) toolbarUI.setFilterCount(result.matched, result.total);
+      }
       if ((model.get("points") ?? []).length === 0) {
         model.set("query_error", null);
         model.set("query_error", NO_BACKEND);

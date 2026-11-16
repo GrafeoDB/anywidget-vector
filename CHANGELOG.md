@@ -1,16 +1,32 @@
 # Changelog
 
-## [1.0.1] - Unreleased
+## [1.1.0] - Unreleased
 
-Grafeo 0.6.3 release: the Grafeo backend moves to grafeo 0.6.3 in Python and in the browser; the widget itself is unchanged. An environment with the `grafeo` extra upgrades grafeo to 0.6.3 or later; to keep grafeo 0.6.2, stay on anywidget-vector 1.0.0 and pin grafeo.
+Python 3.13 release: anywidget-vector needs Python 3.13 or later and is marked stable, `demo_vector()` shows grafeo's Silicon Valley demo dataset, and the Grafeo backend moves to grafeo 0.6.3 in Python and in the browser. Every extra needs the latest release of its packages, and the `demo` extra now installs `grafeo-datasets` and numpy. On Python 3.12, or to keep grafeo 0.6.2 or an older backend client, stay on anywidget-vector 1.0.0.
+
+### Changed
+
+- **Python 3.13 or later is required**: `requires-python` is `>=3.13` (was `>=3.12`), and CI runs the suite on Python 3.13 to 3.15. On Python 3.12, pip and uv keep installing anywidget-vector 1.0.0.
+- **The demo is the Silicon Valley dataset**: `demo_vector()` shows the 64 nodes of grafeo's Silicon Valley demo dataset (`grafeo-datasets` 0.6.3), placed by a PCA of their MiniLM description embeddings and coloured by node label, and `demo_points()` returns them. Run sends the starting query, the 12 nodes nearest to middle-out compression, to Grafeo WASM, which loads `@grafeo-db/datasets` 0.6.3 from jsDelivr on the first Run.
+- **Marked stable**: the package's classifier is `Development Status :: 5 - Production/Stable` (was `3 - Alpha`).
+
+### Removed
+
+- **`DEMO_POINTS`**: the emoji points of the old demo are gone from `anywidget_vector.demo`; `demo_points()` returns the demo's points.
 
 ### Fixed
 
+- **Run with a backend only sends the query**: it also filtered the shown points by the query text, so a count such as `0/64` stayed next to the results and a theme switch afterwards hid them. Without a backend, Run still filters the points by the text.
+- **The explorer names the Grafeo mode in use**: with no collection set, it says "Grafeo WASM, in the browser" or "Grafeo server" in those modes (it said "Grafeo embedded" in every mode).
 - **The WASM smoke test loads the package it is given**: `tests/js/wasm_smoke.ts`, also run by the `grafeo-latest` workflow, imported `@grafeo-db/wasm` from jsDelivr instead of the unpacked package and failed in Node. `connect()` in `backends/grafeo/embed.ts` now takes the same base URL as `loadWasmBindings()`.
 
 ### Dependencies
 
 - **grafeo 0.6.3** (requires `>=0.6.3,<0.7`): the `grafeo` and `dev` extras need grafeo 0.6.3, and the `wasm` mode loads `@grafeo-db/wasm` 0.6.3 (`GRAFEO_WASM_VERSION` in `backends/grafeo/embed.ts`).
+- **grafeo-datasets 0.6.3** (requires `>=0.6.3`): the `demo` extra needs it, with numpy, and the `wasm` demo loads `@grafeo-db/datasets` 0.6.3 from jsDelivr (`GRAFEO_DATASETS_VERSION` in `backends/grafeo/embed.ts`).
+- **Three.js 0.187.0**: the bundled Three.js moves from 0.186.1, with `@types/three` 0.187.0; exported pages render the same pixels as with 0.186.1.
+- **Extras need the latest releases**: `pandas>=3.1.1`, `numpy>=2.5.5`, `qdrant-client>=1.20.0`, `weaviate-client>=4.24.1`, `lancedb>=0.41.0`, `pinecone-client>=6.0.0`, `scikit-learn>=1.9.1` and `umap-learn>=0.6.0`. `chromadb` stays pinned at 1.5.8, as 1.5.9, the latest release, has security issues.
+- **Locked versions refreshed**: 17 packages, among them ruff 0.17.5, ty 0.0.104, prek 0.5.11, numpy 2.5.5, onnxruntime 1.32.0 and umap-learn 0.6.0.
 
 ## [1.0.0] - 2026-11-14
 

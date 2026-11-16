@@ -2,7 +2,7 @@
 // by the Python side, in the same ES module: it is one top-level `var anywidgetVectorVendor`, which in a module is a
 // module-scoped binding, not a property of globalThis. So it is read by its bare name, which resolves to that binding
 // (and to the global when a test evaluates the vendored file as a classic script).
-// The types come from @types/three (the vendored build is three@0.186.1).
+// The types come from @types/three (the vendored build is three@0.187.0).
 import type * as THREE_TYPES from "three";
 import type { OrbitControls as OrbitControlsType } from "three/addons/controls/OrbitControls.js";
 
